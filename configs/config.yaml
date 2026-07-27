@@ -1,0 +1,38 @@
+defaults:
+  - _self_
+
+device: cuda:7
+
+paths:
+  root: ${hydra:runtime.cwd}
+  input_dir: ${paths.root}/inputs
+  model_dir: ${paths.root}/models
+  result_dir: ${paths.root}/results
+
+target:
+  name: target_trampolin1
+  image_dir: ${paths.input_dir}/${target.name}
+  crop_dir: ${paths.result_dir}/${target.name}_crops
+
+video:
+  name: trampolin1.mp4
+  input_path: ${paths.input_dir}/${video.name}
+  output_path: ${paths.result_dir}/tracking_${video.name}
+
+detector:
+  model_path: ${paths.model_dir}/yolo/yolo26l.pt
+  confidence: 0.5
+
+tracker:
+  model_path: ${paths.model_dir}/yolo/yolo26l.pt
+  tracker_config: ${paths.root}/configs/trackers/botsort_custom.yaml
+  confidence: 0.25
+  lost_tolerance: 20
+  image_size: 1280
+
+reid:
+  model_path: ${paths.model_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
+  threshold: 0.65
+  max_features: 30
+  top_k: 3
+

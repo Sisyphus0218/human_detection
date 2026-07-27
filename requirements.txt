@@ -1,0 +1,9 @@
+gdown
+hydra-core
+onnx
+onnxruntime-gpu
+scipy
+tensorboard
+torchreid
+tqdm
+ultralytics
