@@ -34,15 +34,33 @@ class TargetTracker:
         self.device = device
 
         self.confidence = confidence
-        self.lost_tolerance = lost_tolerance
         self.imgsz = image_size
 
-        self.target_track_id: int | None = None
+        # ReID state-machine parameters.
         self.state = "SEARCHING"
-        self.missing_frames = 0
+        self.target_track_id: int | None = None
+        # Keep this limit only for short-gap bounding-box prediction.
+        self.lost_tolerance = lost_tolerance
+
+        # SEARCHING
+        self.reid_search_threshold = self.reid.threshold  # best score >= threshold
+        self.reid_margin_threshold = 0.0  # best score - second score >= threshold
+
+        self.pending_track_id: int | None = None
+        self.pending_hits = 0
+        self.search_confirm_frames = 3
+
+        # TRACKING
+        self.reid_keep_threshold = 0.50
+        self.reid_reject_threshold = 0.40
+
+        self.reid_validation_interval = 5
+        self.reid_validation_failures = 0
+        self.reid_validation_tolerance = 2
+
         self.last_target_bbox: tuple[int, int, int, int] | None = None
         self.last_target_frame_index: int | None = None
-        self.target_bbox_velocity = np.zeros(4, dtype=np.float32)
+        self.target_center_velocity = np.zeros(2, dtype=np.float32)
 
     def remember_target_bbox(
         self,
@@ -58,12 +76,26 @@ class TargetTracker:
         ):
             elapsed_frames = max(1, frame_index - self.last_target_frame_index)
             previous_bbox = np.asarray(self.last_target_bbox, dtype=np.float32)
-            measured_velocity = (current_bbox - previous_bbox) / elapsed_frames
+            current_center = np.array(
+                [
+                    (current_bbox[0] + current_bbox[2]) / 2,
+                    (current_bbox[1] + current_bbox[3]) / 2,
+                ],
+                dtype=np.float32,
+            )
+            previous_center = np.array(
+                [
+                    (previous_bbox[0] + previous_bbox[2]) / 2,
+                    (previous_bbox[1] + previous_bbox[3]) / 2,
+                ],
+                dtype=np.float32,
+            )
+            measured_velocity = (current_center - previous_center) / elapsed_frames
 
             # Smooth detector jitter while retaining the athlete's fast motion.
             # New velocity = 65% * current measured velocity + 35% * previously stored velocity
-            self.target_bbox_velocity = (
-                0.65 * measured_velocity + 0.35 * self.target_bbox_velocity
+            self.target_center_velocity = (
+                0.65 * measured_velocity + 0.35 * self.target_center_velocity
             )
 
         self.last_target_bbox = bbox
@@ -83,24 +115,37 @@ class TargetTracker:
         if elapsed_frames <= 0 or elapsed_frames > self.lost_tolerance:
             return None
 
-        previous_bbox = np.asarray(self.last_target_bbox, dtype=np.float32)
+        x1, y1, x2, y2 = self.last_target_bbox
+        box_width = x2 - x1
+        box_height = y2 - y1
+        if box_width <= 0 or box_height <= 0:
+            return None
+
+        previous_center = np.array(
+            [(x1 + x2) / 2, (y1 + y2) / 2],
+            dtype=np.float32,
+        )
         velocity_decay = 0.9
         decayed_displacement = (
-            self.target_bbox_velocity
+            self.target_center_velocity
             * (1 - velocity_decay**elapsed_frames)
             / (1 - velocity_decay)
         )
-        predicted_bbox = previous_bbox + decayed_displacement
+        predicted_center = previous_center + decayed_displacement
 
-        x1, y1, x2, y2 = np.rint(predicted_bbox).astype(int)
-        x1 = int(np.clip(x1, 0, frame_width - 1))
-        y1 = int(np.clip(y1, 0, frame_height - 1))
-        x2 = int(np.clip(x2, 0, frame_width))
-        y2 = int(np.clip(y2, 0, frame_height))
-        if x2 <= x1 or y2 <= y1:
+        # Move only the center. Keep the last real detection's box dimensions,
+        # shifting the whole box back inside the frame when it reaches an edge.
+        predicted_x1 = int(np.rint(predicted_center[0] - box_width / 2))
+        predicted_y1 = int(np.rint(predicted_center[1] - box_height / 2))
+        predicted_x1 = int(np.clip(predicted_x1, 0, frame_width - box_width))
+        predicted_y1 = int(np.clip(predicted_y1, 0, frame_height - box_height))
+        predicted_x2 = predicted_x1 + box_width
+        predicted_y2 = predicted_y1 + box_height
+
+        if predicted_x2 <= predicted_x1 or predicted_y2 <= predicted_y1:
             return None
 
-        return x1, y1, x2, y2
+        return predicted_x1, predicted_y1, predicted_x2, predicted_y2
 
     def get_tracked_persons(self, result) -> list[TrackedPerson]:
         """Get person crops, bounding boxes, and IDs from one frame."""
@@ -134,49 +179,144 @@ class TargetTracker:
 
         return tracked_persons
 
-    def find_target_with_reid(
+    def get_person_by_id(
+        self,
+        tracked_persons: list[TrackedPerson],
+    ) -> TrackedPerson | None:
+        """Return the locked track without changing tracking state."""
+        if self.target_track_id is None:
+            return None
+
+        for person in tracked_persons:
+            if person.track_id == self.target_track_id:
+                return person
+        return None
+
+    def get_best_reid_candidate(
+        self,
+        tracked_persons: list[TrackedPerson],
+    ) -> tuple[TrackedPerson | None, float, float]:
+        """Return the best candidate, its score, and its lead over second."""
+        if not tracked_persons:
+            return None, 0.0, 0.0
+
+        crops = [person.crop for person in tracked_persons]
+        scores = self.reid.calculate_scores(crops)
+        order = np.argsort(scores)[::-1]
+        best_index = int(order[0])
+        best_score = float(scores[best_index])
+
+        if len(order) > 1:
+            second_score = float(scores[int(order[1])])
+            score_margin = best_score - second_score
+        else:
+            score_margin = float("inf")
+
+        return tracked_persons[best_index], best_score, score_margin
+
+    def clear_pending_candidate(self) -> None:
+        """Discard an unconfirmed ReID candidate."""
+        self.pending_track_id = None
+        self.pending_hits = 0
+
+    def search_target_with_reid(
         self,
         tracked_persons: list[TrackedPerson],
         frame_index: int,
     ) -> TrackedPerson | None:
-        """Search for the target with ReID and lock its current track ID."""
-        self.state = "SEARCHING"
+        """Search globally with a strict three-frame confirmation."""
+        # get the target candidate
+        candidate, score, margin = self.get_best_reid_candidate(tracked_persons)
 
-        if not tracked_persons:
+        if candidate is None:
+            self.clear_pending_candidate()
             return None
+        else:
+            qualified = (
+                score >= self.reid_search_threshold  # best score >= threshold
+                and margin
+                >= self.reid_margin_threshold  # best score - second score >= threshold
+            )
 
-        crops = [person.crop for person in tracked_persons]
-        target_index, target_score, _ = self.reid.find_target(crops)
-        if target_index is None:
-            return None
+            if not qualified:
+                self.clear_pending_candidate()
+                return None
 
-        target = tracked_persons[target_index]
-        self.target_track_id = target.track_id
-        self.missing_frames = 0
-        self.state = "TRACKING"
+            # if the candidate is the same as the previous frame, increment the hit count
+            if candidate.track_id == self.pending_track_id:
+                self.pending_hits += 1
+            else:
+                self.pending_track_id = candidate.track_id
+                self.pending_hits = 1
+
+            if self.pending_hits < self.search_confirm_frames:
+                return None
+            else:  # the candidate has been confirmed for the required number of frames
+                self.state = "TRACKING"
+                self.target_track_id = candidate.track_id
+                self.reid_validation_failures = 0
+                self.clear_pending_candidate()
+
+                tqdm.write(
+                    f"Frame {frame_index}: target confirmed, "
+                    f"track_id={candidate.track_id}, "
+                    f"ReID score={score:.4f}"
+                )
+                return candidate
+
+    def update_tracking_target(
+        self,
+        tracked_persons: list[TrackedPerson],
+        frame_index: int,
+    ) -> TrackedPerson | None:
+        """Follow the locked ID and periodically validate its appearance."""
+        target = self.get_person_by_id(tracked_persons)
+
+        # Once the locked ID disappears, immediately search all current tracks
+        # with ReID instead of waiting for a lost-track tolerance window.
+        if target is None:
+            tqdm.write(
+                f"Frame {frame_index}: target ID missing, " f"switching to ReID search"
+            )
+            self.state = "SEARCHING"
+            self.target_track_id = None
+            self.reid_validation_failures = 0
+            self.clear_pending_candidate()
+            return self.search_target_with_reid(
+                tracked_persons=tracked_persons,
+                frame_index=frame_index,
+            )
+
+        # target is present, validate its appearance every N frames
+        if frame_index % self.reid_validation_interval != 0:
+            return target
+
+        target_score = float(self.reid.calculate_scores([target.crop])[0])
+
+        if target_score >= self.reid_keep_threshold:
+            self.reid_validation_failures = 0
+            return target
+        elif target_score < self.reid_reject_threshold:
+            self.reid_validation_failures = self.reid_validation_tolerance
+        else:
+            self.reid_validation_failures += 1
+
+        if self.reid_validation_failures < self.reid_validation_tolerance:
+            return target
 
         tqdm.write(
-            f"Frame {frame_index}: target found, "
+            f"Frame {frame_index}: locked ID failed ReID validation, "
             f"track_id={target.track_id}, "
             f"ReID score={target_score:.4f}"
         )
-
-        return target
-
-    def find_target_by_id(
-        self,
-        tracked_persons: list[TrackedPerson],
-    ) -> TrackedPerson | None:
-        """Find the person whose ID matches the currently locked target ID."""
-        for person in tracked_persons:
-            if person.track_id == self.target_track_id:
-                self.state = "TRACKING"
-                self.missing_frames = 0
-                return person
-
-        self.state = "MISSING"
-        self.missing_frames += 1
-        return None
+        self.state = "SEARCHING"
+        self.target_track_id = None
+        self.reid_validation_failures = 0
+        self.clear_pending_candidate()
+        return self.search_target_with_reid(
+            tracked_persons=tracked_persons,
+            frame_index=frame_index,
+        )
 
     def update_target_state(
         self,
@@ -184,49 +324,14 @@ class TargetTracker:
         frame_index: int,
     ) -> TrackedPerson | None:
         """
-        START
-        ↓
-        SEARCHING
-        ├─ Target not found by ReID ─────────→ SEARCHING
-        └─ Target found by ReID ─────────────→ TRACKING
-
-        TRACKING
-        ├─ Target ID is present ─────────────→ TRACKING
-        └─ Target ID is missing ─────────────→ MISSING
-
-        MISSING
-        ├─ Previous ID reappears while missing_frames < lost_tolerance ──→ TRACKING
-        ├─ Target ID remains missing while missing_frames < lost_tolerance ──→ MISSING
-        └─ missing_frames >= lost_tolerance
-                ↓
-            Unlock the previous ID
-                ↓
-            SEARCHING
+        SEARCHING confirms a global ReID candidate for three frames.
+        TRACKING follows the locked ID and periodically validates appearance.
         """
-
-        # SEARCHING: No target ID is currently locked.
-        # Use ReID to find the target among the current tracked people.
         if self.state == "SEARCHING":
-            target = self.find_target_with_reid(tracked_persons, frame_index)
-            return target
+            return self.search_target_with_reid(tracked_persons, frame_index)
 
-        # TRACKING: The target ID is currently locked.
-        # Keep following the currently locked target ID.
-        elif self.state == "TRACKING":
-            target = self.find_target_by_id(tracked_persons)
-            return target
-
-        # MISSING: The target ID is currently locked, but the target is not detected.
-        elif self.state == "MISSING":
-            if self.missing_frames < self.lost_tolerance:
-                target = self.find_target_by_id(tracked_persons)
-                return target
-
-            # The old ID has been missing for too long. Unlock the old ID.
-            # Use ReID to search for the target under a possible new track ID.
-            self.target_track_id = None
-            target = self.find_target_with_reid(tracked_persons, frame_index)
-            return target
+        if self.state == "TRACKING":
+            return self.update_tracking_target(tracked_persons, frame_index)
 
         raise RuntimeError(f"Unknown tracking state: {self.state}")
 
@@ -272,12 +377,14 @@ class TargetTracker:
         writer = None
 
         # Reset the tracking state.
-        self.target_track_id = None
         self.state = "SEARCHING"
+        self.target_track_id = None
         self.missing_frames = 0
         self.last_target_bbox = None
         self.last_target_frame_index = None
-        self.target_bbox_velocity.fill(0)
+        self.target_center_velocity.fill(0)
+        self.clear_pending_candidate()
+        self.reid_validation_failures = 0
 
         progress_bar = tqdm(
             results,
