@@ -9,15 +9,19 @@ paths:
   model_dir: ${paths.root}/models
   result_dir: ${paths.root}/results
 
+video:
+  name: trampolin2
+  input_path: ${paths.input_dir}/${video.name}.mp4
+  output_path: ${paths.result_dir}/tracking_${video.name}.mp4
+
 target:
-  name: target_trampolin1
+  name: target_${video.name}
   image_dir: ${paths.input_dir}/${target.name}
   crop_dir: ${paths.result_dir}/${target.name}_crops
 
-video:
-  name: trampolin1.mp4
-  input_path: ${paths.input_dir}/${video.name}
-  output_path: ${paths.result_dir}/tracking_${video.name}
+bbox:
+  path: ${paths.result_dir}/${video.name}_bbox.pt
+  enabled: true
 
 detector:
   model_path: ${paths.model_dir}/yolo/yolo26l.pt

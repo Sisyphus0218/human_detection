@@ -85,6 +85,8 @@ def main(cfg: DictConfig):
     tracking_pipeline.track_video(
         input_path=cfg.video.input_path,
         output_path=cfg.video.output_path,
+        bbox_enabled=cfg.bbox.enabled,
+        bbox_output_path=cfg.bbox.path,
     )
 
 

@@ -21,6 +21,37 @@ class TrackedPerson:
     crop: np.ndarray
 
 
+def build_dense_bbox_trajectory(
+    frame_bboxes: list[tuple[int, int, int, int] | None],
+) -> torch.Tensor:
+    """Fill missing per-frame boxes without changing the tracking state."""
+    frame_count = len(frame_bboxes)
+    if frame_count == 0:
+        return torch.empty((0, 4), dtype=torch.float32)
+
+    valid_indices = np.asarray(
+        [index for index, bbox in enumerate(frame_bboxes) if bbox is not None],
+        dtype=np.int64,
+    )
+    if len(valid_indices) == 0:
+        return torch.full((frame_count, 4), float("nan"), dtype=torch.float32)
+
+    valid_bboxes = np.asarray(
+        [frame_bboxes[index] for index in valid_indices],
+        dtype=np.float32,
+    )
+    all_indices = np.arange(frame_count, dtype=np.float32)
+    dense_bboxes = np.empty((frame_count, 4), dtype=np.float32)
+    for coordinate_index in range(4):
+        dense_bboxes[:, coordinate_index] = np.interp(
+            all_indices,
+            valid_indices,
+            valid_bboxes[:, coordinate_index],
+        )
+
+    return torch.from_numpy(dense_bboxes)
+
+
 class TargetTrackingPipeline:
     def __init__(
         self,
@@ -393,6 +424,8 @@ class TargetTrackingPipeline:
         self,
         input_path: str | Path,
         output_path: str | Path,
+        bbox_output_path: str | Path,
+        bbox_enabled: bool = True,
     ) -> None:
         input_path = Path(input_path)
         if not input_path.is_file():
@@ -404,12 +437,18 @@ class TargetTrackingPipeline:
             f"{output_path.stem}.mp4v-temp.mp4"
         )
 
+        if bbox_enabled:
+            bbox_output_path = Path(bbox_output_path)
+            bbox_output_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Get the FPS of the input video.
         capture = cv2.VideoCapture(input_path)
         if not capture.isOpened():
             raise FileNotFoundError(f"Unable to open video: {input_path}")
         fps = capture.get(cv2.CAP_PROP_FPS)
         total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         capture.release()
         if fps <= 0:
             fps = 30.0
@@ -427,6 +466,9 @@ class TargetTrackingPipeline:
         # track
         results = self.tracker.track(input_path=input_path)
         writer = None
+        frame_bboxes: list[tuple[int, int, int, int] | None] = []
+        bbox_sources: list[int] = []
+        track_ids: list[int] = []
 
         progress_bar = tqdm(
             results,
@@ -457,6 +499,20 @@ class TargetTrackingPipeline:
                         frame_width=width,
                         frame_height=height,
                     )
+
+                if bbox_enabled:
+                    if target is not None:
+                        frame_bboxes.append(target.bbox)
+                        bbox_sources.append(2)  # observed
+                        track_ids.append(target.track_id)
+                    elif predicted_bbox is not None:
+                        frame_bboxes.append(predicted_bbox)
+                        bbox_sources.append(1)  # predicted
+                        track_ids.append(-1)
+                    else:
+                        frame_bboxes.append(None)
+                        bbox_sources.append(0)  # interpolated when exported
+                        track_ids.append(-1)
 
                 # Visualize the tracking result.
                 frame = result.orig_img.copy()
@@ -551,4 +607,34 @@ class TargetTrackingPipeline:
         )
         temporary_output_path.unlink()
 
+        if bbox_enabled:
+            bbx_xyxy = build_dense_bbox_trajectory(frame_bboxes)
+            bbox_source = torch.tensor(bbox_sources, dtype=torch.uint8)
+            bbox_observed_mask = bbox_source == 2
+            bbox_preinterpolation_mask = bbox_source != 0
+            torch.save(
+                {
+                    "bbx_xyxy": bbx_xyxy,
+                    "bbox_source": bbox_source,
+                    "bbox_source_names": {
+                        0: "interpolated",
+                        1: "predicted",
+                        2: "observed",
+                    },
+                    "bbox_observed_mask": bbox_observed_mask,
+                    "bbox_preinterpolation_mask": bbox_preinterpolation_mask,
+                    "track_id": torch.tensor(track_ids, dtype=torch.int64),
+                    "bbox_format": "xyxy",
+                    "coordinate_space": "original_video_pixels",
+                    "video_path": str(input_path.resolve()),
+                    "num_frames": len(frame_bboxes),
+                    "video_width": video_width,
+                    "video_height": video_height,
+                    "fps": float(fps),
+                },
+                bbox_output_path,
+            )
+
         print(f"Tracking result saved to: {output_path}")
+        if bbox_enabled:
+            print(f"Bounding boxes saved to: {bbox_output_path}")
