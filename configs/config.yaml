@@ -1,7 +1,7 @@
 defaults:
   - _self_
 
-device: cuda:7
+device: cuda:0
 
 paths:
   root: ${hydra:runtime.cwd}
@@ -23,16 +23,36 @@ detector:
   model_path: ${paths.model_dir}/yolo/yolo26l.pt
   confidence: 0.5
 
-tracker:
+person_feature_extractor:
+  model_name: osnet_ain_x1_0
+  model_path: ${paths.model_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
+
+positive_memory:
+  feature_dim: 512
+  short_term_capacity: 100
+  long_term_capacity: 500
+
+negative_memory:
+  feature_dim: 512
+  short_term_capacity: 1000
+  long_term_capacity: 3000
+
+target_gallery_matcher:
+  threshold: 0.65
+  top_k: 3
+
+person_tracker:
   model_path: ${paths.model_dir}/yolo/yolo26l.pt
   tracker_config: ${paths.root}/configs/trackers/botsort_custom.yaml
   confidence: 0.25
-  lost_tolerance: 20
   image_size: 1280
 
-reid:
-  model_path: ${paths.model_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
+target_classifier:
+  feature_dim: 512
+  update_steps: 50
+  learning_rate: 1e-3
+  weight_decay: 1e-4
   threshold: 0.65
-  max_features: 30
-  top_k: 3
-
+  
+tracking_pipeline :
+  lost_tolerance: 20

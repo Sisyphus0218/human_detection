@@ -3,6 +3,7 @@ hydra-core
 onnx
 onnxruntime-gpu
 scipy
+scikit-learn
 tensorboard
 torchreid
 tqdm

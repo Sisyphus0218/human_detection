@@ -4,10 +4,14 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import torch
 from tqdm import tqdm
-from ultralytics import YOLO
 
-from target_reid import TargetReID
+from target_classifier import TargetClassifier
+from person_feature_extractor import PersonFeatureExtractor
+from feature_memory import FeatureMemory
+from person_tracker import PersonTracker
+from target_gallery_matcher import TargetGalleryMatcher
 
 
 @dataclass
@@ -17,50 +21,46 @@ class TrackedPerson:
     crop: np.ndarray
 
 
-class TargetTracker:
+class TargetTrackingPipeline:
     def __init__(
         self,
-        yolo_path: str | Path,
-        tracker_config: str,
-        reid: TargetReID,
-        device: str,
-        confidence: float = 0.5,
+        tracker: PersonTracker,
+        person_feature_extractor: PersonFeatureExtractor,
+        positive_feature_memory: FeatureMemory,
+        negative_feature_memory: FeatureMemory,
+        target_gallery_matcher: TargetGalleryMatcher,
+        target_classifier: TargetClassifier,
         lost_tolerance: int = 5,
-        image_size: int = 1280,
     ) -> None:
-        self.model = YOLO(yolo_path)
-        self.tracker_config = tracker_config
-        self.reid = reid
-        self.device = device
-
-        self.confidence = confidence
-        self.imgsz = image_size
+        self.tracker = tracker
+        self.person_feature_extractor = person_feature_extractor
+        self.positive_feature_memory = positive_feature_memory
+        self.negative_feature_memory = negative_feature_memory
+        self.target_gallery_matcher = target_gallery_matcher
+        self.target_classifier = target_classifier
 
         # ReID state-machine parameters.
         self.state = "SEARCHING"
         self.target_track_id: int | None = None
-        # Keep this limit only for short-gap bounding-box prediction.
-        self.lost_tolerance = lost_tolerance
 
-        # SEARCHING
-        self.reid_search_threshold = self.reid.threshold  # best score >= threshold
-        self.reid_margin_threshold = 0.0  # best score - second score >= threshold
-
-        self.pending_track_id: int | None = None
-        self.pending_hits = 0
-        self.search_confirm_frames = 3
-
-        # TRACKING
-        self.reid_keep_threshold = 0.50
-        self.reid_reject_threshold = 0.40
+        self.reid_keep_threshold = 0.35
+        self.reid_reject_threshold = 0.25
 
         self.reid_validation_interval = 5
         self.reid_validation_failures = 0
         self.reid_validation_tolerance = 2
 
+        # bbox
+        self.lost_tolerance = lost_tolerance
         self.last_target_bbox: tuple[int, int, int, int] | None = None
         self.last_target_frame_index: int | None = None
         self.target_center_velocity = np.zeros(2, dtype=np.float32)
+
+        # target classifier
+        self.classifier_collect_interval = 1
+        self.classifier_max_overlap_iou = 0.2
+        self.min_negatives = 30
+        self.min_positives = 20
 
     def remember_target_bbox(
         self,
@@ -179,101 +179,140 @@ class TargetTracker:
 
         return tracked_persons
 
-    def get_person_by_id(
+    def calculate_iou(
         self,
-        tracked_persons: list[TrackedPerson],
-    ) -> TrackedPerson | None:
-        """Return the locked track without changing tracking state."""
-        if self.target_track_id is None:
-            return None
+        first_bbox: tuple[int, int, int, int],
+        second_bbox: tuple[int, int, int, int],
+    ) -> float:
+        """Calculate intersection over union for two xyxy boxes."""
+        first_x1, first_y1, first_x2, first_y2 = first_bbox
+        second_x1, second_y1, second_x2, second_y2 = second_bbox
 
-        for person in tracked_persons:
-            if person.track_id == self.target_track_id:
-                return person
-        return None
+        intersection_width = max(0, min(first_x2, second_x2) - max(first_x1, second_x1))
+        intersection_height = max(
+            0, min(first_y2, second_y2) - max(first_y1, second_y1)
+        )
+        intersection_area = intersection_width * intersection_height
 
-    def get_best_reid_candidate(
+        first_area = max(0, first_x2 - first_x1) * max(0, first_y2 - first_y1)
+        second_area = max(0, second_x2 - second_x1) * max(0, second_y2 - second_y1)
+        union_area = first_area + second_area - intersection_area
+        if union_area <= 0:
+            return 0.0
+        return intersection_area / union_area
+
+    def update_feature_memory(
         self,
-        tracked_persons: list[TrackedPerson],
-    ) -> tuple[TrackedPerson | None, float, float]:
-        """Return the best candidate, its score, and its lead over second."""
-        if not tracked_persons:
-            return None, 0.0, 0.0
+        other_persons: list[TrackedPerson],
+        target: TrackedPerson,
+        target_features: torch.Tensor,
+    ) -> None:
+        is_target_clean = True
+        safe_negative_crops = []
 
-        crops = [person.crop for person in tracked_persons]
-        scores = self.reid.calculate_scores(crops)
-        order = np.argsort(scores)[::-1]
-        best_index = int(order[0])
-        best_score = float(scores[best_index])
+        for person in other_persons:
+            iou = self.calculate_iou(target.bbox, person.bbox)
+            if iou <= self.classifier_max_overlap_iou:
+                safe_negative_crops.append(person.crop)
+            else:
+                is_target_clean = False
 
-        if len(order) > 1:
-            second_score = float(scores[int(order[1])])
-            score_margin = best_score - second_score
-        else:
-            score_margin = float("inf")
+        if safe_negative_crops:
+            negative_features = self.person_feature_extractor.extract_features(
+                safe_negative_crops
+            )
+            self.negative_feature_memory.add_short_term_memory(negative_features)
 
-        return tracked_persons[best_index], best_score, score_margin
+        if is_target_clean:
+            self.positive_feature_memory.add_short_term_memory(target_features)
 
-    def clear_pending_candidate(self) -> None:
-        """Discard an unconfirmed ReID candidate."""
-        self.pending_track_id = None
-        self.pending_hits = 0
+    def update_target_classifier(
+        self,
+        frame_index: int,
+    ) -> None:
+        if frame_index % self.classifier_collect_interval != 0:
+            return
+
+        positive_count = self.positive_feature_memory.count
+        negative_count = self.negative_feature_memory.count
+        if positive_count < self.min_positives or negative_count < self.min_negatives:
+            tqdm.write(
+                f"Frame {frame_index}: not enough samples to update target classifier, "
+                f"positives={positive_count}, negatives={negative_count}"
+            )
+            return
+
+        self.target_classifier.fit(
+            positive_features=self.positive_feature_memory.all_features(),
+            negative_features=self.negative_feature_memory.all_features(),
+        )
+
+        tqdm.write(f"Frame {frame_index}: target classifier updated")
 
     def search_target_with_reid(
         self,
         tracked_persons: list[TrackedPerson],
         frame_index: int,
     ) -> TrackedPerson | None:
-        """Search globally with a strict three-frame confirmation."""
-        # get the target candidate
-        candidate, score, margin = self.get_best_reid_candidate(tracked_persons)
-
-        if candidate is None:
-            self.clear_pending_candidate()
+        if not tracked_persons:
             return None
+
+        crops = [person.crop for person in tracked_persons]
+        features = self.person_feature_extractor.extract_features(crops)
+
+        if self.target_classifier.is_trained:
+            best_index, best_score, _ = self.target_classifier.find_target(
+                features.detach()
+            )
         else:
-            qualified = (
-                score >= self.reid_search_threshold  # best score >= threshold
-                and margin
-                >= self.reid_margin_threshold  # best score - second score >= threshold
+            best_index, best_score, _ = self.target_gallery_matcher.find_target(
+                features.detach(), self.positive_feature_memory
             )
 
-            if not qualified:
-                self.clear_pending_candidate()
-                return None
+        # if not self.target_classifier.is_trained or best_index is None:
+        #     best_index, best_score, _ = self.target_gallery_matcher.find_target(
+        #         features, self.positive_feature_memory
+        #     )
 
-            # if the candidate is the same as the previous frame, increment the hit count
-            if candidate.track_id == self.pending_track_id:
-                self.pending_hits += 1
-            else:
-                self.pending_track_id = candidate.track_id
-                self.pending_hits = 1
+        if best_index is None:
+            tqdm.write(
+                f"Frame {frame_index}: no candidate passed the ReID threshold, "
+                f"best score: {best_score:.4f}"
+            )
+            return None
 
-            if self.pending_hits < self.search_confirm_frames:
-                return None
-            else:  # the candidate has been confirmed for the required number of frames
-                self.state = "TRACKING"
-                self.target_track_id = candidate.track_id
-                self.reid_validation_failures = 0
-                self.clear_pending_candidate()
+        target = tracked_persons[best_index]
 
-                tqdm.write(
-                    f"Frame {frame_index}: target confirmed, "
-                    f"track_id={candidate.track_id}, "
-                    f"ReID score={score:.4f}"
-                )
-                return candidate
+        self.state = "TRACKING"
+        self.target_track_id = target.track_id
+        self.reid_validation_failures = 0
 
-    def update_tracking_target(
+        tqdm.write(
+            f"Frame {frame_index}: target confirmed, "
+            f"track id={self.target_track_id}, "
+            f"reid score={best_score:.4f}"
+        )
+
+        return target
+
+    def keep_tracking_target(
         self,
         tracked_persons: list[TrackedPerson],
         frame_index: int,
     ) -> TrackedPerson | None:
         """Follow the locked ID and periodically validate its appearance."""
-        target = self.get_person_by_id(tracked_persons)
+        # search the locked ID in the current frame
+        target = None
+        for index, person in enumerate(tracked_persons):
+            if person.track_id == self.target_track_id:
+                target = person
+                target_index = index
+                other_persons = (
+                    tracked_persons[:target_index] + tracked_persons[target_index + 1 :]
+                )
+                break
 
-        # Once the locked ID disappears, immediately search all current tracks
-        # with ReID instead of waiting for a lost-track tolerance window.
+        # the target disappears
         if target is None:
             tqdm.write(
                 f"Frame {frame_index}: target ID missing, " f"switching to ReID search"
@@ -281,42 +320,57 @@ class TargetTracker:
             self.state = "SEARCHING"
             self.target_track_id = None
             self.reid_validation_failures = 0
-            self.clear_pending_candidate()
             return self.search_target_with_reid(
                 tracked_persons=tracked_persons,
                 frame_index=frame_index,
             )
 
-        # target is present, validate its appearance every N frames
+        # validate the target's appearance every N frames
         if frame_index % self.reid_validation_interval != 0:
             return target
+        else:  # validate
+            # calculate reid score
+            target_features = self.person_feature_extractor.extract_features(
+                target.crop
+            )
+            if self.target_classifier.is_trained:
+                score = self.target_classifier.predict(target_features.detach())[0]
+            else:
+                score = self.target_gallery_matcher.calculate_similarity_scores(
+                    target_features.detach(), self.positive_feature_memory
+                )[0]
 
-        target_score = float(self.reid.calculate_scores([target.crop])[0])
+            # validate target
+            if score >= self.reid_keep_threshold:  # pass
+                self.reid_validation_failures = 0
+                self.update_feature_memory(
+                    other_persons=other_persons,
+                    target=target,
+                    target_features=target_features.detach(),
+                )
+                self.update_target_classifier(
+                    frame_index=frame_index,
+                )
+            elif score < self.reid_reject_threshold:  # fail
+                self.reid_validation_failures = self.reid_validation_tolerance
+            else:  # supcious
+                self.reid_validation_failures += 1
 
-        if target_score >= self.reid_keep_threshold:
-            self.reid_validation_failures = 0
-            return target
-        elif target_score < self.reid_reject_threshold:
-            self.reid_validation_failures = self.reid_validation_tolerance
-        else:
-            self.reid_validation_failures += 1
-
-        if self.reid_validation_failures < self.reid_validation_tolerance:
-            return target
-
-        tqdm.write(
-            f"Frame {frame_index}: locked ID failed ReID validation, "
-            f"track_id={target.track_id}, "
-            f"ReID score={target_score:.4f}"
-        )
-        self.state = "SEARCHING"
-        self.target_track_id = None
-        self.reid_validation_failures = 0
-        self.clear_pending_candidate()
-        return self.search_target_with_reid(
-            tracked_persons=tracked_persons,
-            frame_index=frame_index,
-        )
+            if self.reid_validation_failures < self.reid_validation_tolerance:
+                return target
+            else:  # too many failures, switch to SEARCHING
+                tqdm.write(
+                    f"Frame {frame_index}: locked ID failed ReID validation, "
+                    f"track id={target.track_id}, "
+                    f"ReID score={score:.4f}"
+                )
+                self.state = "SEARCHING"
+                self.target_track_id = None
+                self.reid_validation_failures = 0
+                return self.search_target_with_reid(
+                    tracked_persons=tracked_persons,
+                    frame_index=frame_index,
+                )
 
     def update_target_state(
         self,
@@ -324,14 +378,14 @@ class TargetTracker:
         frame_index: int,
     ) -> TrackedPerson | None:
         """
-        SEARCHING confirms a global ReID candidate for three frames.
+        SEARCHING locks the best qualified global ReID candidate.
         TRACKING follows the locked ID and periodically validates appearance.
         """
         if self.state == "SEARCHING":
             return self.search_target_with_reid(tracked_persons, frame_index)
 
         if self.state == "TRACKING":
-            return self.update_tracking_target(tracked_persons, frame_index)
+            return self.keep_tracking_target(tracked_persons, frame_index)
 
         raise RuntimeError(f"Unknown tracking state: {self.state}")
 
@@ -340,9 +394,9 @@ class TargetTracker:
         input_path: str | Path,
         output_path: str | Path,
     ) -> None:
-        """Track the registered target and save an annotated result video."""
-        if self.reid.gallery_size == 0:
-            raise RuntimeError("Please register the target before starting tracking")
+        input_path = Path(input_path)
+        if not input_path.is_file():
+            raise FileNotFoundError(f"Input video not found: {input_path}")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,22 +414,6 @@ class TargetTracker:
         if fps <= 0:
             fps = 30.0
 
-        # Initialize the tracker.
-        track_kwargs = {
-            "source": input_path,
-            "classes": [0],
-            "tracker": self.tracker_config,
-            "device": self.device,
-            "conf": self.confidence,
-            "imgsz": self.imgsz,
-            "stream": True,
-            "persist": True,
-            "verbose": False,
-        }
-
-        results = self.model.track(**track_kwargs)
-        writer = None
-
         # Reset the tracking state.
         self.state = "SEARCHING"
         self.target_track_id = None
@@ -383,8 +421,12 @@ class TargetTracker:
         self.last_target_bbox = None
         self.last_target_frame_index = None
         self.target_center_velocity.fill(0)
-        self.clear_pending_candidate()
         self.reid_validation_failures = 0
+        self.target_classifier.reset()
+
+        # track
+        results = self.tracker.track(input_path=input_path)
+        writer = None
 
         progress_bar = tqdm(
             results,

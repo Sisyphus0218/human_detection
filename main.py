@@ -1,52 +1,88 @@
 import hydra
 from omegaconf import DictConfig
 
+from feature_memory import FeatureMemory
+from person_feature_extractor import PersonFeatureExtractor
+from person_tracker import PersonTracker
+from target_classifier import TargetClassifier
 from target_detector import TargetDetector
-from target_reid import TargetReID
-from target_tracker import TargetTracker
+from target_gallery_matcher import TargetGalleryMatcher
+from target_tracking_pipeline import TargetTrackingPipeline
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(cfg: DictConfig):
-    # STAGE 1: Build the target person's ReID gallery from reference images.
-
-    # Detect the target person in the reference images and crop them.
+    # STAGE 1: Detect the target person in the reference images and crop bboxes.
     detector = TargetDetector(
         model_path=cfg.detector.model_path,
         confidence=cfg.detector.confidence,
         device=cfg.device,
     )
 
-    detections = detector.detect_target(
+    crops = detector.detect_target(
         cfg.target.image_dir,
         cfg.target.crop_dir,
     )
 
-    # Register the target person in the ReID gallery using the cropped images.
-    reid = TargetReID(
-        model_path=cfg.reid.model_path,
-        threshold=cfg.reid.threshold,
+    # STAGE 2: Register the target person and save to the feature memory.
+    person_feature_extractor = PersonFeatureExtractor(
+        model_name=cfg.person_feature_extractor.model_name,
+        model_path=cfg.person_feature_extractor.model_path,
         device=cfg.device,
-        max_features=cfg.reid.max_features,
-        top_k=cfg.reid.top_k,
     )
 
-    reid.add_target_images([detection.crop for detection in detections])
-    reid.register_target()
-    print(f"Target gallery size: {reid.gallery_size}")
-
-    # STAGE2: Find the registered target and track the target.
-    tracker = TargetTracker(
-        yolo_path=cfg.tracker.model_path,
-        tracker_config=cfg.tracker.tracker_config,
-        reid=reid,
+    positive_feature_memory = FeatureMemory(
+        feature_dim=cfg.positive_memory.feature_dim,
+        short_term_capacity=cfg.positive_memory.short_term_capacity,
+        long_term_capacity=cfg.positive_memory.long_term_capacity,
         device=cfg.device,
-        confidence=cfg.tracker.confidence,
-        lost_tolerance=cfg.tracker.lost_tolerance,
-        image_size=cfg.tracker.image_size,
+    )
+    negative_feature_memory = FeatureMemory(
+        feature_dim=cfg.negative_memory.feature_dim,
+        short_term_capacity=cfg.negative_memory.short_term_capacity,
+        long_term_capacity=cfg.negative_memory.long_term_capacity,
+        device=cfg.device,
     )
 
-    tracker.track_video(
+    positive_features = person_feature_extractor.extract_features(crops)
+    positive_feature_memory.add_long_term_memory(positive_features)
+    print(f"Register successful.")
+
+    # STAGE 3: Track the registered target in the video.
+    target_gallery_matcher = TargetGalleryMatcher(
+        threshold=cfg.target_gallery_matcher.threshold,
+        top_k=cfg.target_gallery_matcher.top_k,
+        device=cfg.device,
+    )
+
+    person_tracker = PersonTracker(
+        yolo_path=cfg.person_tracker.model_path,
+        tracker_config=cfg.person_tracker.tracker_config,
+        confidence=cfg.person_tracker.confidence,
+        image_size=cfg.person_tracker.image_size,
+        device=cfg.device,
+    )
+
+    target_classifier = TargetClassifier(
+        feature_dim=cfg.target_classifier.feature_dim,
+        update_steps=cfg.target_classifier.update_steps,
+        learning_rate=cfg.target_classifier.learning_rate,
+        weight_decay=cfg.target_classifier.weight_decay,
+        threshold=cfg.target_classifier.threshold,
+        device=cfg.device,
+    )
+
+    tracking_pipeline = TargetTrackingPipeline(
+        tracker=person_tracker,
+        person_feature_extractor=person_feature_extractor,
+        positive_feature_memory=positive_feature_memory,
+        negative_feature_memory=negative_feature_memory,
+        target_gallery_matcher=target_gallery_matcher,
+        target_classifier=target_classifier,
+        lost_tolerance=cfg.tracking_pipeline.lost_tolerance,
+    )
+
+    tracking_pipeline.track_video(
         input_path=cfg.video.input_path,
         output_path=cfg.video.output_path,
     )
