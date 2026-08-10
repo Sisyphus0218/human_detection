@@ -21,6 +21,21 @@ class TrackedPerson:
     crop: np.ndarray
 
 
+@dataclass(frozen=True)
+class TrackingPipelineConfig:
+    reid_keep_threshold: float
+    reid_reject_threshold: float
+    reid_validation_interval: int
+    reid_validation_tolerance: int
+    lost_tolerance: int
+    velocity_smoothing: float
+    velocity_decay: float
+    classifier_collect_interval: int
+    classifier_max_overlap_iou: float
+    min_negatives: int
+    min_positives: int
+
+
 def build_dense_bbox_trajectory(
     frame_bboxes: list[tuple[int, int, int, int] | None],
 ) -> torch.Tensor:
@@ -61,7 +76,7 @@ class TargetTrackingPipeline:
         negative_feature_memory: FeatureMemory,
         target_gallery_matcher: TargetGalleryMatcher,
         target_classifier: TargetClassifier,
-        lost_tolerance: int = 5,
+        config: TrackingPipelineConfig,
     ) -> None:
         self.tracker = tracker
         self.person_feature_extractor = person_feature_extractor
@@ -74,24 +89,26 @@ class TargetTrackingPipeline:
         self.state = "SEARCHING"
         self.target_track_id: int | None = None
 
-        self.reid_keep_threshold = 0.35
-        self.reid_reject_threshold = 0.25
+        self.reid_keep_threshold = config.reid_keep_threshold
+        self.reid_reject_threshold = config.reid_reject_threshold
 
-        self.reid_validation_interval = 5
+        self.reid_validation_interval = config.reid_validation_interval
+        self.reid_validation_tolerance = config.reid_validation_tolerance
         self.reid_validation_failures = 0
-        self.reid_validation_tolerance = 2
 
         # bbox
-        self.lost_tolerance = lost_tolerance
+        self.lost_tolerance = config.lost_tolerance
+        self.velocity_smoothing = config.velocity_smoothing
+        self.velocity_decay = config.velocity_decay
         self.last_target_bbox: tuple[int, int, int, int] | None = None
         self.last_target_frame_index: int | None = None
         self.target_center_velocity = np.zeros(2, dtype=np.float32)
 
         # target classifier
-        self.classifier_collect_interval = 1
-        self.classifier_max_overlap_iou = 0.2
-        self.min_negatives = 30
-        self.min_positives = 20
+        self.classifier_collect_interval = config.classifier_collect_interval
+        self.classifier_max_overlap_iou = config.classifier_max_overlap_iou
+        self.min_negatives = config.min_negatives
+        self.min_positives = config.min_positives
 
     def remember_target_bbox(
         self,
@@ -124,9 +141,10 @@ class TargetTrackingPipeline:
             measured_velocity = (current_center - previous_center) / elapsed_frames
 
             # Smooth detector jitter while retaining the athlete's fast motion.
-            # New velocity = 65% * current measured velocity + 35% * previously stored velocity
+            previous_velocity_weight = 1 - self.velocity_smoothing
             self.target_center_velocity = (
-                0.65 * measured_velocity + 0.35 * self.target_center_velocity
+                self.velocity_smoothing * measured_velocity
+                + previous_velocity_weight * self.target_center_velocity
             )
 
         self.last_target_bbox = bbox
@@ -156,11 +174,10 @@ class TargetTrackingPipeline:
             [(x1 + x2) / 2, (y1 + y2) / 2],
             dtype=np.float32,
         )
-        velocity_decay = 0.9
         decayed_displacement = (
             self.target_center_velocity
-            * (1 - velocity_decay**elapsed_frames)
-            / (1 - velocity_decay)
+            * (1 - self.velocity_decay**elapsed_frames)
+            / (1 - self.velocity_decay)
         )
         predicted_center = previous_center + decayed_displacement
 

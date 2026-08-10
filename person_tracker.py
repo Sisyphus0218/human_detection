@@ -6,13 +6,13 @@ from ultralytics import YOLO
 class PersonTracker:
     def __init__(
         self,
-        yolo_path: str | Path,
+        model_path: str | Path,
         tracker_config: dict,
         confidence: float = 0.25,
         image_size: int = 1280,
         device: str | None = None,
     ):
-        self.model = YOLO(yolo_path)
+        self.model = YOLO(model_path)
         self.tracker_config = tracker_config
         self.confidence = confidence
         self.image_size = image_size
