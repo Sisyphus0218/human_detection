@@ -437,12 +437,156 @@ class TargetTrackingPipeline:
 
         raise RuntimeError(f"Unknown tracking state: {self.state}")
 
+    def render_tracking_frame(
+        self,
+        result,
+        target: TrackedPerson | None,
+        predicted_bbox: tuple[int, int, int, int] | None,
+    ) -> np.ndarray:
+        """Render the target or its short-gap prediction."""
+        frame = result.orig_img.copy()
+
+        if target is not None:
+            x1, y1, x2, y2 = target.bbox
+            cv2.rectangle(
+                img=frame,
+                pt1=(x1, y1),
+                pt2=(x2, y2),
+                color=(0, 255, 0),
+                thickness=3,
+            )
+            cv2.putText(
+                img=frame,
+                text=f"Target ID: {target.track_id}",
+                org=(x1, max(y1 - 10, 25)),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.7,
+                color=(0, 255, 0),
+                thickness=2,
+            )
+        elif predicted_bbox is not None:
+            x1, y1, x2, y2 = predicted_bbox
+            cv2.rectangle(
+                img=frame,
+                pt1=(x1, y1),
+                pt2=(x2, y2),
+                color=(0, 165, 255),
+                thickness=3,
+            )
+            cv2.putText(
+                img=frame,
+                text="Target predicted",
+                org=(x1, max(y1 - 10, 25)),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.7,
+                color=(0, 165, 255),
+                thickness=2,
+            )
+
+        cv2.putText(
+            img=frame,
+            text=self.state,
+            org=(20, 35),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=0.8,
+            color=(0, 255, 255),
+            thickness=2,
+        )
+        return frame
+
+    def render_debug_frame(
+        self,
+        result,
+        frame_index: int,
+        target: TrackedPerson | None,
+    ) -> np.ndarray:
+        """Render all raw tracker outputs and the current target state."""
+        frame = result.plot(conf=True, labels=True)
+        selected_id = target.track_id if target is not None else None
+
+        frame_height, frame_width = frame.shape[:2]
+        panel_top = max(0, frame_height - 44)
+        panel = frame.copy()
+        cv2.rectangle(
+            img=panel,
+            pt1=(0, panel_top),
+            pt2=(frame_width, frame_height),
+            color=(0, 0, 0),
+            thickness=-1,
+        )
+        cv2.addWeighted(panel, 0.65, frame, 0.35, 0, frame)
+
+        cv2.putText(
+            img=frame,
+            text=(
+                f"Frame {frame_index} | State: {self.state} | "
+                f"Selected ID: {selected_id}"
+            ),
+            org=(12, panel_top + 28),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=0.6,
+            color=(0, 255, 255),
+            thickness=2,
+        )
+
+        if target is not None:
+            x1, y1, x2, y2 = target.bbox
+            cv2.rectangle(
+                img=frame,
+                pt1=(x1, y1),
+                pt2=(x2, y2),
+                color=(255, 0, 255),
+                thickness=4,
+            )
+            cv2.putText(
+                img=frame,
+                text=f"ReID selected ID: {target.track_id}",
+                org=(x1, max(y1 - 12, 145)),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.7,
+                color=(255, 0, 255),
+                thickness=2,
+            )
+
+        return frame
+
+    @staticmethod
+    def convert_video_to_h264(
+        temporary_path: Path,
+        output_path: Path,
+    ) -> None:
+        """Convert a temporary MP4V video to an H.264 MP4 video."""
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(temporary_path),
+                "-c:v",
+                "libx264",
+                "-crf",
+                "23",
+                "-preset",
+                "medium",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                "-an",
+                str(output_path),
+            ],
+            check=True,
+        )
+        temporary_path.unlink()
+
     def track_video(
         self,
         input_path: str | Path,
         output_path: str | Path,
         bbox_output_path: str | Path,
+        debug_output_path: str | Path,
         bbox_enabled: bool = True,
+        debug_enabled: bool = True,
     ) -> None:
         input_path = Path(input_path)
         if not input_path.is_file():
@@ -453,6 +597,14 @@ class TargetTrackingPipeline:
         temporary_output_path = output_path.with_name(
             f"{output_path.stem}.mp4v-temp.mp4"
         )
+
+        debug_temporary_output_path = None
+        if debug_enabled:
+            debug_output_path = Path(debug_output_path)
+            debug_output_path.parent.mkdir(parents=True, exist_ok=True)
+            debug_temporary_output_path = debug_output_path.with_name(
+                f"{debug_output_path.stem}.mp4v-temp.mp4"
+            )
 
         if bbox_enabled:
             bbox_output_path = Path(bbox_output_path)
@@ -483,6 +635,7 @@ class TargetTrackingPipeline:
         # track
         results = self.tracker.track(input_path=input_path)
         writer = None
+        debug_writer = None
         frame_bboxes: list[tuple[int, int, int, int] | None] = []
         bbox_sources: list[int] = []
         track_ids: list[int] = []
@@ -531,54 +684,22 @@ class TargetTrackingPipeline:
                         bbox_sources.append(0)  # interpolated when exported
                         track_ids.append(-1)
 
-                # Visualize the tracking result.
-                frame = result.orig_img.copy()
-                if target is not None:
-                    x1, y1, x2, y2 = target.bbox
-                    cv2.rectangle(
-                        img=frame,
-                        pt1=(x1, y1),
-                        pt2=(x2, y2),
-                        color=(0, 255, 0),
-                        thickness=3,
-                    )
-                    cv2.putText(
-                        img=frame,
-                        text=f"Target ID: {target.track_id}",
-                        org=(x1, max(y1 - 10, 25)),  # origin of the text
-                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale=0.7,
-                        color=(0, 255, 0),
-                        thickness=2,
-                    )
-                elif predicted_bbox is not None:
-                    x1, y1, x2, y2 = predicted_bbox
-                    cv2.rectangle(
-                        img=frame,
-                        pt1=(x1, y1),
-                        pt2=(x2, y2),
-                        color=(0, 165, 255),
-                        thickness=3,
-                    )
-                    cv2.putText(
-                        img=frame,
-                        text="Target predicted",
-                        org=(x1, max(y1 - 10, 25)),
-                        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale=0.7,
-                        color=(0, 165, 255),
-                        thickness=2,
-                    )
-
-                cv2.putText(
-                    img=frame,
-                    text=self.state,
-                    org=(20, 35),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.8,
-                    color=(0, 255, 255),
-                    thickness=2,
+                frame = self.render_tracking_frame(
+                    result=result,
+                    target=target,
+                    predicted_bbox=predicted_bbox,
                 )
+
+                # Save a second view containing every raw YOLO+tracker result.
+                # ReID only selects a target and does not modify ``result``, so
+                # this is the exact multi-person tracking input seen by ReID.
+                debug_frame = None
+                if debug_enabled:
+                    debug_frame = self.render_debug_frame(
+                        result=result,
+                        frame_index=frame_index,
+                        target=target,
+                    )
 
                 if writer is None:
                     height, width = frame.shape[:2]
@@ -596,33 +717,40 @@ class TargetTrackingPipeline:
                         )
 
                 writer.write(frame)
+
+                if debug_frame is not None:
+                    if debug_writer is None:
+                        height, width = debug_frame.shape[:2]
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        debug_writer = cv2.VideoWriter(
+                            str(debug_temporary_output_path),
+                            fourcc,
+                            fps,
+                            (width, height),
+                        )
+                        if not debug_writer.isOpened():
+                            raise RuntimeError(
+                                f"Unable to create temporary debug video: "
+                                f"{debug_temporary_output_path}"
+                            )
+                    debug_writer.write(debug_frame)
         finally:
             progress_bar.close()
             if writer is not None:
                 writer.release()
+            if debug_writer is not None:
+                debug_writer.release()
 
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(temporary_output_path),
-                "-c:v",
-                "libx264",
-                "-crf",
-                "23",
-                "-preset",
-                "medium",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-                "-an",
-                str(output_path),
-            ],
-            check=True,
+        self.convert_video_to_h264(
+            temporary_path=temporary_output_path,
+            output_path=output_path,
         )
-        temporary_output_path.unlink()
+
+        if debug_enabled:
+            self.convert_video_to_h264(
+                temporary_path=debug_temporary_output_path,
+                output_path=debug_output_path,
+            )
 
         if bbox_enabled:
             bbx_xyxy = build_dense_bbox_trajectory(frame_bboxes)
@@ -653,5 +781,7 @@ class TargetTrackingPipeline:
             )
 
         print(f"Tracking result saved to: {output_path}")
+        if debug_enabled:
+            print(f"All-tracks debug video saved to: {debug_output_path}")
         if bbox_enabled:
             print(f"Bounding boxes saved to: {bbox_output_path}")

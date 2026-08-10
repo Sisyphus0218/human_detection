@@ -1,27 +1,33 @@
 defaults:
   - _self_
 
+name: walking_outdoor_clothes_change_60s
 device: cuda:0
 
 paths:
   root: ${hydra:runtime.cwd}
-  input_dir: ${paths.root}/inputs
   model_dir: ${paths.root}/models
-  result_dir: ${paths.root}/results
+  input_dir: ${paths.root}/inputs/${name}
+  output_dir: ${paths.root}/results/${name}
 
-video:
-  name: trampolin2
-  input_path: ${paths.input_dir}/${video.name}.mp4
-  output_path: ${paths.result_dir}/tracking_${video.name}.mp4
+input:
+  video: ${paths.input_dir}/${name}.mp4
+  target_dir: ${paths.input_dir}/target
 
-target:
-  name: target_${video.name}
-  image_dir: ${paths.input_dir}/${target.name}
-  crop_dir: ${paths.result_dir}/${target.name}_crops
+output:
+  tracking_video:
+    path: ${paths.output_dir}/tracking.mp4
 
-bbox:
-  path: ${paths.result_dir}/${video.name}_bbox.pt
-  enabled: true
+  crops:
+    path: ${paths.output_dir}/crops
+
+  bbox:
+    enabled: true
+    path: ${paths.output_dir}/bbox.pt
+
+  debug:
+    enabled: true
+    path: ${paths.output_dir}/debug.mp4
 
 detector:
   _target_: target_detector.TargetDetector

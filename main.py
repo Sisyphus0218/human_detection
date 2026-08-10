@@ -9,8 +9,8 @@ def main(cfg: DictConfig):
     detector = instantiate(cfg.detector)
 
     crops = detector.detect_target(
-        cfg.target.image_dir,
-        cfg.target.crop_dir,
+        cfg.input.target_dir,
+        cfg.output.crops.path,
     )
 
     # STAGE 2: Register the target person and save to the feature memory.
@@ -41,10 +41,12 @@ def main(cfg: DictConfig):
     )
 
     tracking_pipeline.track_video(
-        input_path=cfg.video.input_path,
-        output_path=cfg.video.output_path,
-        bbox_enabled=cfg.bbox.enabled,
-        bbox_output_path=cfg.bbox.path,
+        input_path=cfg.input.video,
+        output_path=cfg.output.tracking_video.path,
+        bbox_enabled=cfg.output.bbox.enabled,
+        bbox_output_path=cfg.output.bbox.path,
+        debug_enabled=cfg.output.debug.enabled,
+        debug_output_path=cfg.output.debug.path,
     )
 
 
