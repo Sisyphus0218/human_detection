@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 
-class TargetClassifier(nn.Module):
+class LogisticTargetClassifier(nn.Module):
     def __init__(
         self,
         feature_dim: int,
@@ -58,27 +58,12 @@ class TargetClassifier(nn.Module):
         Calculate unnormalized classification scores.
 
         Args:
-            features: ReID features with shape [batch_size, feature_dim].
+            features: [batch_size, feature_dim].
 
         Returns:
             Logits with shape [batch_size].
         """
-        features = features.to(
-            device=self.device,
-            dtype=torch.float32,
-        )
-
-        if features.ndim != 2:
-            raise ValueError(
-                "Classifier input must have shape " "[batch_size, feature_dim]"
-            )
-
-        if features.shape[1] != self.feature_dim:
-            raise ValueError(
-                f"Expected feature dimension {self.feature_dim}, "
-                f"got {features.shape[1]}"
-            )
-
+        features = features.to(device=self.device, dtype=torch.float32)
         return self.classifier(features).squeeze(1)
 
     def fit(

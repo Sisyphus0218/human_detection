@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from target_classifier import TargetClassifier
+from logistic_target_classifier import LogisticTargetClassifier
 from person_feature_extractor import PersonFeatureExtractor
 from feature_memory import FeatureMemory
 from person_tracker import PersonTracker
@@ -76,7 +76,7 @@ class TargetTrackingPipeline:
         positive_feature_memory: FeatureMemory,
         negative_feature_memory: FeatureMemory,
         target_gallery_matcher: TargetGalleryMatcher,
-        target_classifier: TargetClassifier,
+        target_classifier: LogisticTargetClassifier,
         config: TrackingPipelineConfig,
     ) -> None:
         self.tracker = tracker

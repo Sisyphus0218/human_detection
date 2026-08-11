@@ -1,0 +1,6 @@
+_target_: ridge_target_classifier.RidgeTargetClassifier
+
+feature_dim: 512
+regularization: 1.0
+threshold: 0.65
+device: ${device}
