@@ -1,7 +1,7 @@
 defaults:
   - _self_
 
-name: walking_outdoor_clothes_change_60s
+name: trampolin3
 device: cuda:0
 
 paths:
@@ -86,6 +86,7 @@ tracking_pipeline:
     reid_reject_threshold: 0.25
     reid_validation_interval: 5
     reid_validation_tolerance: 2
+    missing_frame_tolerance: 3
     lost_tolerance: 20
     velocity_smoothing: 0.65
     velocity_decay: 0.9

@@ -27,6 +27,7 @@ class TrackingPipelineConfig:
     reid_reject_threshold: float
     reid_validation_interval: int
     reid_validation_tolerance: int
+    missing_frame_tolerance: int
     lost_tolerance: int
     velocity_smoothing: float
     velocity_decay: float
@@ -95,6 +96,9 @@ class TargetTrackingPipeline:
         self.reid_validation_interval = config.reid_validation_interval
         self.reid_validation_tolerance = config.reid_validation_tolerance
         self.reid_validation_failures = 0
+
+        self.missing_frame_tolerance = config.missing_frame_tolerance
+        self.missing_frames = 0
 
         # bbox
         self.lost_tolerance = config.lost_tolerance
@@ -363,12 +367,11 @@ class TargetTrackingPipeline:
         # the target disappears
         if target is None:
             tqdm.write(
-                f"Frame {frame_index}: target ID missing, " f"switching to ReID search"
+                f"Frame {frame_index}: target ID missing, " f"switch to RECOVERING"
             )
-            self.state = "SEARCHING"
-            self.target_track_id = None
+            self.state = "RECOVERING"
             self.reid_validation_failures = 0
-            return self.search_target_with_reid(
+            return self.recover_target(
                 tracked_persons=tracked_persons,
                 frame_index=frame_index,
             )
@@ -420,6 +423,61 @@ class TargetTrackingPipeline:
                     frame_index=frame_index,
                 )
 
+    def recover_target(
+        self,
+        tracked_persons: list[TrackedPerson],
+        frame_index: int,
+    ) -> TrackedPerson | None:
+        if self.missing_frames >= self.missing_frame_tolerance:
+            self.state = "SEARCHING"
+            self.target_track_id = None
+            self.missing_frames = 0
+            return self.search_target_with_reid(
+                tracked_persons=tracked_persons,
+                frame_index=frame_index,
+            )
+
+        if len(tracked_persons) == 0:
+            self.missing_frames += 1
+            return None
+
+        for person in tracked_persons:
+            if person.track_id == self.target_track_id:
+                self.state = "TRACKING"
+                self.missing_frames = 0
+                tqdm.write(
+                    f"Frame {frame_index}: recovered original track ID, "
+                    f"track id={person.track_id}"
+                )
+                return person
+
+        crops = [person.crop for person in tracked_persons]
+        features = self.person_feature_extractor.extract_features(crops)
+        if self.target_classifier.is_trained:
+            recovery_method = "target classifier"
+            best_index, best_score, _ = self.target_classifier.find_target(
+                features.detach()
+            )
+        else:
+            recovery_method = "gallery matcher"
+            best_index, best_score, _ = self.target_gallery_matcher.find_target(
+                features.detach(), self.positive_feature_memory
+            )
+        if best_index is not None:
+            target = tracked_persons[best_index]
+            self.missing_frames = 0
+            self.target_track_id = target.track_id
+            self.state = "TRACKING"
+            tqdm.write(
+                f"Frame {frame_index}: recovered target with {recovery_method}, "
+                f"track id={target.track_id}, ReID score={best_score:.4f}"
+            )
+            return target
+
+        self.missing_frames += 1
+
+        return None
+
     def update_target_state(
         self,
         tracked_persons: list[TrackedPerson],
@@ -434,6 +492,9 @@ class TargetTrackingPipeline:
 
         if self.state == "TRACKING":
             return self.keep_tracking_target(tracked_persons, frame_index)
+
+        if self.state == "RECOVERING":
+            return self.recover_target(tracked_persons, frame_index)
 
         raise RuntimeError(f"Unknown tracking state: {self.state}")
 
