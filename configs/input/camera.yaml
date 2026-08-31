@@ -1,0 +1,8 @@
+type: camera
+
+# Timestamp used as the base name of the result directory
+name: ${now:%Y-%m-%d-%H-%M-%S}-camera
+
+# Camera input source
+source: 0
+

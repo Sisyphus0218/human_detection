@@ -2,14 +2,33 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "调试人体追踪",
+            "name": "Track Video",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "cwd": "${workspaceFolder}",
             "python": "${workspaceFolder}/.venv/bin/python",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": true,
+            "args": [
+                "input=video",
+                "input.name=walking_outdoor_clothes_change_60s",
+                "target.name=walking_outdoor_clothes_change_60s"
+            ]
+        },
+        {
+            "name": "Track Camera",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "input=camera",
+                "target.name=walking_outdoor_clothes_change_60s"
+            ]
         }
     ]
 }

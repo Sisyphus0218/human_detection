@@ -1,0 +1,7 @@
+type: video
+
+# Video filename without the extension
+name: ???
+
+# Video input source
+source: ${paths.inputs_dir}/video/${.name}.mp4

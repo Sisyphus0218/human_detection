@@ -1,45 +1,50 @@
 defaults:
+  - input: video
   - target_classifier: ridge
   - _self_
 
-name: ptug_multi_1
 device: cuda:0
 
 paths:
   root: ${hydra:runtime.cwd}
-  model_dir: ${paths.root}/models
-  input_dir: ${paths.root}/inputs/${name}
-  output_dir: ${paths.root}/results/${name}
+  models_dir: ${paths.root}/models
+  inputs_dir: ${paths.root}/inputs
 
-input:
-  video: ${paths.input_dir}/${name}.mp4
-  target_dir: ${paths.input_dir}/target
+target:
+  # Name of the person to track
+  name: ???
 
-output:
+  # Directory containing reference images
+  directory: ${paths.inputs_dir}/target/${.name}
+
+results:
+  # Directory for the current tracking task
+  directory: ${paths.root}/results/${input.name}-${target.name}
+
   tracking_video:
-    path: ${paths.output_dir}/tracking.mp4
+    path: ${results.directory}/tracking.mp4
 
   crops:
-    path: ${paths.output_dir}/crops
+    path: ${results.directory}/crops
 
   bbox:
     enabled: true
-    path: ${paths.output_dir}/bbox.pt
+    path: ${results.directory}/bbox.pt
 
   debug:
     enabled: true
-    path: ${paths.output_dir}/debug.mp4
+    path: ${results.directory}/debug.mp4
 
 detector:
   _target_: target_detector.TargetDetector
-  model_path: ${paths.model_dir}/yolo/yolo26l.pt
+  model_path: ${paths.models_dir}/yolo/yolo26l.pt
   confidence: 0.5
   device: ${device}
 
 person_feature_extractor:
   _target_: person_feature_extractor.PersonFeatureExtractor
   model_name: osnet_ain_x1_0
-  model_path: ${paths.model_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
+  model_path: ${paths.models_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
   device: ${device}
 
 positive_memory:
@@ -64,7 +69,7 @@ target_gallery_matcher:
 
 person_tracker:
   _target_: person_tracker.PersonTracker
-  model_path: ${paths.model_dir}/yolo/yolo26l.pt
+  model_path: ${paths.models_dir}/yolo/yolo26l.pt
   tracker_config: ${paths.root}/configs/trackers/botsort_custom.yaml
   confidence: 0.25
   image_size: 1280

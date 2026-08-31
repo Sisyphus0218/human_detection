@@ -7,11 +7,7 @@ from omegaconf import DictConfig
 def main(cfg: DictConfig):
     # STAGE 1: Detect the target person in the reference images and crop bboxes.
     detector = instantiate(cfg.detector)
-
-    crops = detector.detect_target(
-        cfg.input.target_dir,
-        cfg.output.crops.path,
-    )
+    crops = detector.detect_target(cfg.target.directory, cfg.results.crops.path)
 
     # STAGE 2: Register the target person and save to the feature memory.
     person_feature_extractor = instantiate(cfg.person_feature_extractor)
@@ -21,13 +17,12 @@ def main(cfg: DictConfig):
 
     positive_features = person_feature_extractor.extract_features(crops)
     positive_feature_memory.add_long_term_memory(positive_features)
+
     print(f"Register successful.")
 
     # STAGE 3: Track the registered target in the video.
-    target_gallery_matcher = instantiate(cfg.target_gallery_matcher)
-
     person_tracker = instantiate(cfg.person_tracker)
-
+    target_gallery_matcher = instantiate(cfg.target_gallery_matcher)
     target_classifier = instantiate(cfg.target_classifier)
 
     tracking_pipeline = instantiate(
@@ -41,12 +36,12 @@ def main(cfg: DictConfig):
     )
 
     tracking_pipeline.track_video(
-        input_path=cfg.input.video,
-        output_path=cfg.output.tracking_video.path,
-        bbox_enabled=cfg.output.bbox.enabled,
-        bbox_output_path=cfg.output.bbox.path,
-        debug_enabled=cfg.output.debug.enabled,
-        debug_output_path=cfg.output.debug.path,
+        input_path=cfg.input.source,
+        output_path=cfg.results.tracking_video.path,
+        bbox_enabled=cfg.results.bbox.enabled,
+        bbox_output_path=cfg.results.bbox.path,
+        debug_enabled=cfg.results.debug.enabled,
+        debug_output_path=cfg.results.debug.path,
     )
 
 
