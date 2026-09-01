@@ -4,4 +4,6 @@ type: video
 name: ???
 
 # Video input source
-source: ${paths.inputs_dir}/video/${.name}.mp4
+source:
+  _target_: human_detection.frame_source.VideoFileSource
+  video_path: ${paths.inputs_dir}/video/${input.name}.mp4

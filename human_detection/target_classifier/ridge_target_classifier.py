@@ -1,8 +1,9 @@
 import torch
-from torch import nn
+
+from .target_classifier import TargetClassifier
 
 
-class RidgeTargetClassifier(nn.Module):
+class RidgeTargetClassifier(TargetClassifier):
     def __init__(
         self,
         feature_dim: int,

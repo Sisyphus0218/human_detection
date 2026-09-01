@@ -1,0 +1,7 @@
+_target_: human_detection.person_tracker.YOLOPersonTracker
+
+model_path: ${paths.models_dir}/yolo/yolo26l.pt
+tracking_algorithm: ${paths.root}/configs/tracking_algorithm/botsort_custom.yaml
+confidence: 0.25
+image_size: 1280
+device: ${device}

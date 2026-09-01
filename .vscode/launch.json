@@ -5,9 +5,9 @@
             "name": "Track Video",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/main.py",
+            "module": "human_detection.main",
             "cwd": "${workspaceFolder}",
-            "python": "${workspaceFolder}/.venv/bin/python",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
@@ -20,9 +20,9 @@
             "name": "Track Camera",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/main.py",
+            "module": "human_detection.main",
             "cwd": "${workspaceFolder}",
-            "python": "${workspaceFolder}/.venv/bin/python",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [

@@ -1,6 +1,9 @@
 defaults:
   - input: video
+  - person_detector: accurate
+  - feature_extractor: osnet
   - target_classifier: ridge
+  - person_tracker: fast
   - _self_
 
 device: cuda:0
@@ -21,72 +24,61 @@ results:
   # Directory for the current tracking task
   directory: ${paths.root}/results/${input.name}-${target.name}
 
-  tracking_video:
-    path: ${results.directory}/tracking.mp4
-
   crops:
     path: ${results.directory}/crops
+
+outputs:
+  tracking_video:
+    enabled: true
+    path: ${results.directory}/tracking.mp4
 
   bbox:
     enabled: true
     path: ${results.directory}/bbox.pt
 
-  debug:
+  debug_video:
     enabled: true
     path: ${results.directory}/debug.mp4
 
-detector:
-  _target_: target_detector.TargetDetector
-  model_path: ${paths.models_dir}/yolo/yolo26l.pt
-  confidence: 0.5
-  device: ${device}
-
-person_feature_extractor:
-  _target_: person_feature_extractor.PersonFeatureExtractor
-  model_name: osnet_ain_x1_0
-  model_path: ${paths.models_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
-  device: ${device}
+display:
+  enabled: true
+  window_name: Target Tracking
 
 positive_memory:
-  _target_: feature_memory.FeatureMemory
+  _target_: human_detection.feature_memory.FeatureMemory
   feature_dim: 512
   short_term_capacity: 100
   long_term_capacity: 500
   device: ${device}
 
 negative_memory:
-  _target_: feature_memory.FeatureMemory
+  _target_: human_detection.feature_memory.FeatureMemory
   feature_dim: 512
   short_term_capacity: 1000
   long_term_capacity: 3000
   device: ${device}
 
 target_gallery_matcher:
-  _target_: target_gallery_matcher.TargetGalleryMatcher
+  _target_: human_detection.target_gallery_matcher.TargetGalleryMatcher
   threshold: 0.65
   top_k: 3
   device: ${device}
 
-person_tracker:
-  _target_: person_tracker.PersonTracker
-  model_path: ${paths.models_dir}/yolo/yolo26l.pt
-  tracker_config: ${paths.root}/configs/trackers/botsort_custom.yaml
-  confidence: 0.25
-  image_size: 1280
-  device: ${device}
+target_bbox_trajectory:
+  _target_: human_detection.target_tracker.TargetBBoxTrajectory
+  lost_tolerance: 20
+  velocity_smoothing: 0.65
+  velocity_decay: 0.9
 
-tracking_pipeline:
-  _target_: target_tracking_pipeline.TargetTrackingPipeline
+target_tracker:
+  _target_: human_detection.target_tracker.TargetTracker
   config:
-    _target_: target_tracking_pipeline.TrackingPipelineConfig
+    _target_: human_detection.target_tracker.TargetTrackerConfig
     reid_keep_threshold: 0.35
     reid_reject_threshold: 0.25
     reid_validation_interval: 5
     reid_validation_tolerance: 2
     missing_frame_tolerance: 3
-    lost_tolerance: 20
-    velocity_smoothing: 0.65
-    velocity_decay: 0.9
     classifier_collect_interval: 1
     classifier_max_overlap_iou: 0.2
     min_negatives: 30

@@ -1,8 +1,10 @@
 import torch
 from torch import nn
 
+from .target_classifier import TargetClassifier
 
-class LogisticTargetClassifier(nn.Module):
+
+class LogisticTargetClassifier(TargetClassifier):
     def __init__(
         self,
         feature_dim: int,

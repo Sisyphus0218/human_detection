@@ -4,5 +4,10 @@ type: camera
 name: ${now:%Y-%m-%d-%H-%M-%S}-camera
 
 # Camera input source
-source: 0
+source:
+  _target_: human_detection.frame_source.PrimeSenseCameraSource
+  openni2_redist_path: 'C:\Program Files\OpenNI2\Redist'
+  width: 320
+  height: 240
+  fps: 30
 

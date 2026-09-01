@@ -1,4 +1,4 @@
-_target_: ridge_target_classifier.RidgeTargetClassifier
+_target_: human_detection.target_classifier.RidgeTargetClassifier
 
 feature_dim: 512
 regularization: 1.0

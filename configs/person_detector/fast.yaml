@@ -1,0 +1,5 @@
+_target_: human_detection.person_detector.YOLOPersonDetector
+
+model_path: ${paths.models_dir}/yolo/yolo26m.pt
+confidence: 0.5
+device: ${device}

@@ -4,8 +4,10 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
+from .person_detector import PersonDetector
 
-class TargetDetector:
+
+class YOLOPersonDetector(PersonDetector):
     def __init__(
         self,
         model_path: str | Path,
@@ -26,12 +28,13 @@ class TargetDetector:
         Save the cropped images to target_crop_dir.
 
         Args:
-            target_image_dir (str | Path): Directory containing the images to process.
-            target_crop_dir (str | Path): Directory to save the cropped images.
+            target_image_dir: Directory containing the images to process.
+            target_crop_dir: Directory to save the cropped images.
 
         Returns:
-            crops (list[np.ndarray]): A list of cropped BGR images.
+            crops: A list of cropped BGR images.
         """
+
         # Check the validity of the directory.
         target_image_dir = Path(target_image_dir)
         if not target_image_dir.exists():

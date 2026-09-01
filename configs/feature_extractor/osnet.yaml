@@ -1,0 +1,6 @@
+_target_: human_detection.feature_extractor.OSNetFeatureExtractor
+
+model_name: osnet_ain_x1_0
+model_path: ${paths.models_dir}/osnet/osnet_ain_x1_0_msmt17_256x128_amsgrad_ep50_lr0.0015_coslr_b64_fb10_softmax_labsmth_flip_jitter.pth
+feature_dim: 512
+device: ${device}

@@ -1,4 +1,4 @@
-_target_: logistic_target_classifier.LogisticTargetClassifier
+_target_: human_detection.target_classifier.LogisticTargetClassifier
 
 feature_dim: 512
 update_steps: 50
