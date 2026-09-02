@@ -1,0 +1,12 @@
+_target_: human_detection.pipeline.TrackingPipeline
+
+config:
+  _target_: human_detection.pipeline.TrackingPipelineConfig
+  tracking_video_enabled: ${results.tracking_video.enabled}
+  tracking_video_path: ${results.tracking_video.path}
+  debug_video_enabled: ${results.debug_video.enabled}
+  debug_video_path: ${results.debug_video.path}
+  bbox_enabled: ${results.bbox.enabled}
+  bbox_path: ${results.bbox.path}
+  display_enabled: ${results.display.enabled}
+  display_window_name: ${results.display.window_name}

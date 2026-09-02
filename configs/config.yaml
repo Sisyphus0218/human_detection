@@ -1,9 +1,13 @@
 defaults:
-  - input: video
+  - source: video
   - person_detector: accurate
   - feature_extractor: osnet
+  - target_matching: default
   - target_classifier: ridge
-  - person_tracker: fast
+  - person_tracker: accurate
+  - target_tracker: default
+  - registration_pipeline: default
+  - tracking_pipeline: default
   - _self_
 
 device: cuda:0
@@ -22,64 +26,23 @@ target:
 
 results:
   # Directory for the current tracking task
-  directory: ${paths.root}/results/${input.name}-${target.name}
+  directory: ${paths.root}/results/${now:%Y-%m-%d-%H-%M-%S}-${source.name}-${target.name}
 
   crops:
     path: ${results.directory}/crops
-
-outputs:
-  tracking_video:
-    enabled: true
-    path: ${results.directory}/tracking.mp4
 
   bbox:
     enabled: true
     path: ${results.directory}/bbox.pt
 
+  tracking_video:
+    enabled: true
+    path: ${results.directory}/tracking.mp4
+
   debug_video:
     enabled: true
     path: ${results.directory}/debug.mp4
 
-display:
-  enabled: true
-  window_name: Target Tracking
-
-positive_memory:
-  _target_: human_detection.feature_memory.FeatureMemory
-  feature_dim: 512
-  short_term_capacity: 100
-  long_term_capacity: 500
-  device: ${device}
-
-negative_memory:
-  _target_: human_detection.feature_memory.FeatureMemory
-  feature_dim: 512
-  short_term_capacity: 1000
-  long_term_capacity: 3000
-  device: ${device}
-
-target_gallery_matcher:
-  _target_: human_detection.target_gallery_matcher.TargetGalleryMatcher
-  threshold: 0.65
-  top_k: 3
-  device: ${device}
-
-target_bbox_trajectory:
-  _target_: human_detection.target_tracker.TargetBBoxTrajectory
-  lost_tolerance: 20
-  velocity_smoothing: 0.65
-  velocity_decay: 0.9
-
-target_tracker:
-  _target_: human_detection.target_tracker.TargetTracker
-  config:
-    _target_: human_detection.target_tracker.TargetTrackerConfig
-    reid_keep_threshold: 0.35
-    reid_reject_threshold: 0.25
-    reid_validation_interval: 5
-    reid_validation_tolerance: 2
-    missing_frame_tolerance: 3
-    classifier_collect_interval: 1
-    classifier_max_overlap_iou: 0.2
-    min_negatives: 30
-    min_positives: 20
+  display:
+    enabled: true
+    window_name: Target Tracking

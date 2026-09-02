@@ -8,6 +8,9 @@ from .rgbd_frame import RGBDFrame
 class FrameSource(ABC):
     """Common interface for frame sources used by the tracking pipeline."""
 
+    def __init__(self, name: str) -> None:
+        self.name = name
+
     @property
     @abstractmethod
     def width(self) -> int:

@@ -1,0 +1,6 @@
+_target_: human_detection.pipeline.RegistrationPipeline
+
+config:
+  _target_: human_detection.pipeline.RegistrationPipelineConfig
+  target_directory: ${target.directory}
+  crops_output_path: ${results.crops.path}

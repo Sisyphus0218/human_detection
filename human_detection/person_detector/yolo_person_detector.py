@@ -91,6 +91,11 @@ class YOLOPersonDetector(PersonDetector):
 
             crops.append(crop)
 
+        if not crops:
+            raise RuntimeError(
+                f"No persons detected in the images of {target_image_dir}"
+            )
+
         print(f"Processed images: {processed_count}")
         print(f"Detected and saved: {len(crops)}")
         print(f"Skipped images: {processed_count - len(crops)}")

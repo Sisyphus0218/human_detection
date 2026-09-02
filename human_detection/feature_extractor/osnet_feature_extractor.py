@@ -48,6 +48,8 @@ class OSNetFeatureExtractor(FeatureExtractor):
 
         if isinstance(bgr_images, np.ndarray):
             bgr_images = [bgr_images]
+        if not bgr_images:
+            raise ValueError("No images provided for feature extraction.")
 
         rgb_images = [cv2.cvtColor(image, cv2.COLOR_BGR2RGB) for image in bgr_images]
         features = self._extractor(rgb_images)

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -12,24 +13,46 @@ from human_detection.visualization import (
 )
 
 
-class TrackingRunner:
+@dataclass(frozen=True)
+class TrackingPipelineConfig:
+    """Output and display settings for the tracking pipeline."""
+
+    bbox_enabled: bool
+    bbox_path: str | Path
+    tracking_video_enabled: bool
+    tracking_video_path: str | Path
+    debug_video_enabled: bool
+    debug_video_path: str | Path
+    display_enabled: bool
+    display_window_name: str = "Target Tracking"
+
+
+class TrackingPipeline:
     """Run target tracking and manage optional outputs and display."""
 
     def __init__(
         self,
         target_tracker: TargetTracker,
+        config: TrackingPipelineConfig,
     ) -> None:
         self.target_tracker = target_tracker
+        self.config = config
 
-    def run(
-        self,
-        source: FrameSource,
-        tracking_writer: VideoWriter | None = None,
-        debug_writer: VideoWriter | None = None,
-        bbox_output_path: str | Path | None = None,
-        display_enabled: bool = False,
-        display_window_name: str = "Target Tracking",
-    ) -> None:
+    def run(self, source: FrameSource) -> None:
+        tracking_writer = None
+        if self.config.tracking_video_enabled:
+            tracking_writer = VideoWriter(
+                output_path=self.config.tracking_video_path,
+                fps=source.fps,
+            )
+
+        debug_writer = None
+        if self.config.debug_video_enabled:
+            debug_writer = VideoWriter(
+                output_path=self.config.debug_video_path,
+                fps=source.fps,
+            )
+
         tracking_results = self.target_tracker.track(source)
         progress_bar = tqdm(
             tracking_results,
@@ -57,11 +80,11 @@ class TrackingRunner:
                     debug_writer.write(debug_frame)
 
                 # display online
-                if display_enabled:
+                if self.config.display_enabled:
                     if tracking_frame is None:
                         tracking_frame = render_tracking_frame(result)
 
-                    cv2.imshow(display_window_name, tracking_frame)
+                    cv2.imshow(self.config.display_window_name, tracking_frame)
                     display_window_opened = True
 
                     key = cv2.waitKey(1) & 0xFF
@@ -82,7 +105,7 @@ class TrackingRunner:
                 debug_writer.close()
             if display_window_opened:
                 try:
-                    cv2.destroyWindow(display_window_name)
+                    cv2.destroyWindow(self.config.display_window_name)
                 except cv2.error:
                     pass
 
@@ -99,6 +122,9 @@ class TrackingRunner:
             debug_writer.finalize()
             print(f"All-tracks debug video saved to: {debug_writer.output_path}")
 
-        if bbox_output_path is not None:
-            self.target_tracker.target_bbox_trajectory.save(bbox_output_path, source)
-            print(f"Bounding boxes saved to: {bbox_output_path}")
+        if self.config.bbox_enabled:
+            self.target_tracker.target_bbox_trajectory.save(
+                self.config.bbox_path,
+                source,
+            )
+            print(f"Bounding boxes saved to: {self.config.bbox_path}")

@@ -1,9 +1,0 @@
-type: video
-
-# Video filename without the extension
-name: ???
-
-# Video input source
-source:
-  _target_: human_detection.frame_source.VideoFileSource
-  video_path: ${paths.inputs_dir}/video/${input.name}.mp4

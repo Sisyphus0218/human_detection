@@ -9,7 +9,8 @@ from .rgbd_frame import RGBDFrame
 class VideoFileSource(FrameSource):
     """Read color frames from a video file."""
 
-    def __init__(self, video_path: str | Path) -> None:
+    def __init__(self, name: str, video_path: str | Path) -> None:
+        super().__init__(name=name)
         self.video_path = Path(video_path).resolve()
         if not self.video_path.is_file():
             raise FileNotFoundError(f"Video file not found: {self.video_path}")

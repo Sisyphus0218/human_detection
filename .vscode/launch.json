@@ -11,8 +11,8 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "input=video",
-                "input.name=walking_outdoor_clothes_change_60s",
+                "source=video",
+                "source.name=walking_outdoor_clothes_change_60s",
                 "target.name=walking_outdoor_clothes_change_60s"
             ]
         },
@@ -26,7 +26,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "input=camera",
+                "source=primesense_camera",
                 "target.name=walking_outdoor_clothes_change_60s"
             ]
         }

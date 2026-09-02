@@ -1,6 +1,6 @@
 import torch
 
-from human_detection.feature_memory import FeatureMemory
+from .feature_memory import FeatureMemory
 
 
 class TargetGalleryMatcher:

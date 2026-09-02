@@ -1,0 +1,7 @@
+_target_: human_detection.frame_source.PrimeSenseCameraSource
+
+name: camera
+openni2_redist_path: 'C:\Program Files\OpenNI2\Redist'
+width: 320
+height: 240
+fps: 30

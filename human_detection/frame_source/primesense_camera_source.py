@@ -12,11 +12,13 @@ class PrimeSenseCameraSource(FrameSource):
 
     def __init__(
         self,
+        name: str,
         openni2_redist_path: str | Path | None = None,
         width: int = 320,
         height: int = 240,
         fps: int = 30,
     ) -> None:
+        super().__init__(name=name)
         if openni2_redist_path is not None:
             self.openni2_redist_path = Path(openni2_redist_path)
         else:

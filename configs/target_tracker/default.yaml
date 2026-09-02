@@ -1,0 +1,19 @@
+target_bbox_trajectory:
+  _target_: human_detection.target_tracker.TargetBBoxTrajectory
+  lost_tolerance: 20
+  velocity_smoothing: 0.65
+  velocity_decay: 0.9
+
+tracker:
+  _target_: human_detection.target_tracker.TargetTracker
+  config:
+    _target_: human_detection.target_tracker.TargetTrackerConfig
+    reid_keep_threshold: 0.35
+    reid_reject_threshold: 0.25
+    reid_validation_interval: 5
+    reid_validation_tolerance: 2
+    missing_frame_tolerance: 3
+    classifier_collect_interval: 1
+    classifier_max_overlap_iou: 0.2
+    min_negatives: 30
+    min_positives: 20

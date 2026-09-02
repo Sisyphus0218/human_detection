@@ -6,7 +6,6 @@ import torch
 from tqdm import tqdm
 
 from human_detection.feature_extractor import FeatureExtractor
-from human_detection.feature_memory import FeatureMemory
 from human_detection.frame_source import FrameSource
 from human_detection.person_tracker import (
     PersonTracker,
@@ -14,7 +13,7 @@ from human_detection.person_tracker import (
     TrackedPerson,
 )
 from human_detection.target_classifier import TargetClassifier
-from human_detection.target_gallery_matcher import TargetGalleryMatcher
+from human_detection.target_matching import FeatureMemory, TargetGalleryMatcher
 from human_detection.utils import calculate_iou
 
 from .target_bbox_trajectory import TargetBBoxTrajectory

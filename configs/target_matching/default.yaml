@@ -1,0 +1,19 @@
+positive_memory:
+  _target_: human_detection.target_matching.FeatureMemory
+  feature_dim: 512
+  short_term_capacity: 100
+  long_term_capacity: 500
+  device: ${device}
+
+negative_memory:
+  _target_: human_detection.target_matching.FeatureMemory
+  feature_dim: 512
+  short_term_capacity: 1000
+  long_term_capacity: 3000
+  device: ${device}
+
+target_gallery_matcher:
+  _target_: human_detection.target_matching.TargetGalleryMatcher
+  threshold: 0.65
+  top_k: 3
+  device: ${device}
