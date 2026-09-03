@@ -340,4 +340,6 @@ class TargetTracker:
         self.target_track_id = None
         self.missing_frames = 0
         self.reid_validation_failures = 0
+        self.positive_feature_memory.clear_short_term_memory()
+        self.negative_feature_memory.clear_short_term_memory()
         self.target_classifier.reset()
