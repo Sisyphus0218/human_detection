@@ -1,0 +1,5 @@
+_target_: human_detection.bbox_trajectory.TargetBBoxTrajectory
+
+lost_tolerance: 20
+velocity_smoothing: 0.65
+velocity_decay: 0.9

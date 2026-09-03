@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 import numpy as np
@@ -8,19 +6,7 @@ import torch
 from human_detection.frame_source import FrameSource
 from human_detection.person_tracker import TrackedPerson
 
-
-class BBoxSource(Enum):
-    MISSING = "missing"
-    PREDICTED = "predicted"
-    OBSERVED = "observed"
-
-
-@dataclass(frozen=True)
-class BBoxTrajectoryEntry:
-    frame_index: int
-    bbox: tuple[int, int, int, int] | None
-    source: BBoxSource
-    track_id: int | None
+from .bbox_trajectory_entry import BBoxSource, BBoxTrajectoryEntry
 
 
 class TargetBBoxTrajectory:
@@ -57,17 +43,17 @@ class TargetBBoxTrajectory:
     def update(
         self,
         frame_index: int,
-        observed_target: TrackedPerson | None,
+        target: TrackedPerson | None,
         frame_width: int,
         frame_height: int,
     ) -> BBoxTrajectoryEntry:
-        if observed_target is not None:
-            self.remember_bbox(observed_target.bbox, frame_index)
+        if target is not None:
+            self.remember_bbox(target.bbox, frame_index)
             entry = BBoxTrajectoryEntry(
                 frame_index=frame_index,
-                bbox=observed_target.bbox,
+                bbox=target.bbox,
                 source=BBoxSource.OBSERVED,
-                track_id=observed_target.track_id,
+                track_id=target.track_id,
             )
         else:
             predicted_bbox = self.predict_bbox(

@@ -1,0 +1,7 @@
+_target_: human_detection.pose_estimator.MediaPipePoseEstimator
+
+model_path: ${paths.models_dir}/mediapipe/pose_landmarker.task
+
+min_pose_detection_confidence: 0.5
+min_pose_presence_confidence: 0.5
+min_keypoint_confidence: 0.5

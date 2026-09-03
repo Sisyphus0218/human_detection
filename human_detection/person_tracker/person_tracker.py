@@ -2,15 +2,15 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from .person_tracking_result import PersonTrackingResult
+from .tracked_person import TrackedPerson
 
 
 class PersonTracker(ABC):
     """Common interface for person trackers."""
 
     @abstractmethod
-    def track_frame(
+    def track(
         self,
         frame: np.ndarray,
-    ) -> PersonTrackingResult:
-        """Track people in one frame and return the tracking result."""
+    ) -> list[TrackedPerson]:
+        """Track people in one frame; return an empty list when none are found."""

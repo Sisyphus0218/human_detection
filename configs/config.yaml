@@ -1,12 +1,15 @@
 defaults:
-  - source: video
-  - person_detector: accurate
+  - bbox_trajectory: default
   - feature_extractor: osnet
-  - target_matching: default
-  - target_classifier: ridge
+  - person_detector: accurate
   - person_tracker: accurate
-  - target_tracker: default
+  - pose_estimator: vitpose
+  - position_estimator: default
   - registration_pipeline: default
+  - source: video
+  - target_classifier: ridge
+  - target_matching: default
+  - target_tracker: default
   - tracking_pipeline: default
   - _self_
 
@@ -18,14 +21,10 @@ paths:
   inputs_dir: ${paths.root}/inputs
 
 target:
-  # Name of the person to track
-  name: ???
-
-  # Directory containing reference images
+  name: ??? # Name of the person to track
   directory: ${paths.inputs_dir}/target/${.name}
 
 results:
-  # Directory for the current tracking task
   directory: ${paths.root}/results/${now:%Y-%m-%d-%H-%M-%S}-${source.name}-${target.name}
 
   crops:
@@ -35,7 +34,7 @@ results:
     enabled: true
     path: ${results.directory}/bbox.pt
 
-  tracking_video:
+  video:
     enabled: true
     path: ${results.directory}/tracking.mp4
 

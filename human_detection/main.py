@@ -20,28 +20,29 @@ def main(cfg: DictConfig):
     registration.run()
 
     # STAGE 2: Track the registered target.
+    frame_source = instantiate(cfg.source)
     person_tracker = instantiate(cfg.person_tracker)
     target_gallery_matcher = instantiate(cfg.target_matching.target_gallery_matcher)
     target_classifier = instantiate(cfg.target_classifier)
-    target_bbox_trajectory = instantiate(
-        cfg.target_tracker.target_bbox_trajectory,
-    )
-    frame_source = instantiate(cfg.source)
-
     target_tracker = instantiate(
         cfg.target_tracker.tracker,
-        person_tracker=person_tracker,
         feature_extractor=feature_extractor,
         positive_feature_memory=positive_feature_memory,
         negative_feature_memory=negative_feature_memory,
         target_gallery_matcher=target_gallery_matcher,
         target_classifier=target_classifier,
-        target_bbox_trajectory=target_bbox_trajectory,
     )
+    target_bbox_trajectory = instantiate(cfg.bbox_trajectory)
+    pose_estimator = instantiate(cfg.pose_estimator)
+    position_estimator = instantiate(cfg.position_estimator)
 
     tracking = instantiate(
         cfg.tracking_pipeline,
+        person_tracker=person_tracker,
         target_tracker=target_tracker,
+        target_bbox_trajectory=target_bbox_trajectory,
+        pose_estimator=pose_estimator,
+        position_estimator=position_estimator,
     )
     tracking.run(frame_source)
 

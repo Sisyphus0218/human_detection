@@ -1,0 +1,6 @@
+_target_: human_detection.pose_estimator.ViTPoseEstimator
+
+model_id: usyd-community/vitpose-base-simple
+cache_dir: ${paths.models_dir}/vitpose
+device: ${device}
+min_keypoint_confidence: 0.3

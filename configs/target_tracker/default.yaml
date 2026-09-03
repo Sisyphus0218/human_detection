@@ -1,9 +1,3 @@
-target_bbox_trajectory:
-  _target_: human_detection.target_tracker.TargetBBoxTrajectory
-  lost_tolerance: 20
-  velocity_smoothing: 0.65
-  velocity_decay: 0.9
-
 tracker:
   _target_: human_detection.target_tracker.TargetTracker
   config:

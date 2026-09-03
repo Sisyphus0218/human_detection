@@ -4,7 +4,7 @@ import numpy as np
 from ultralytics import YOLO
 
 from .person_tracker import PersonTracker
-from .person_tracking_result import PersonTrackingResult, TrackedPerson
+from .tracked_person import TrackedPerson
 
 
 class YOLOPersonTracker(PersonTracker):
@@ -22,10 +22,10 @@ class YOLOPersonTracker(PersonTracker):
         self.image_size = image_size
         self.device = device
 
-    def track_frame(
+    def track(
         self,
         frame: np.ndarray,
-    ) -> PersonTrackingResult:
+    ) -> list[TrackedPerson]:
         track_kwargs = {
             "source": frame,
             "classes": [0],
@@ -41,7 +41,7 @@ class YOLOPersonTracker(PersonTracker):
         result = self.model.track(**track_kwargs)[0]
         boxes = result.boxes
         if boxes is None or boxes.id is None:
-            return PersonTrackingResult(frame=frame, tracked_persons=[])
+            return []
 
         frame_height, frame_width = frame.shape[:2]
         xyxy = boxes.xyxy.detach().cpu().numpy()
@@ -67,7 +67,4 @@ class YOLOPersonTracker(PersonTracker):
                 )
             )
 
-        return PersonTrackingResult(
-            frame=frame,
-            tracked_persons=tracked_persons,
-        )
+        return tracked_persons

@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -6,17 +5,11 @@ import torch
 from tqdm import tqdm
 
 from human_detection.feature_extractor import FeatureExtractor
-from human_detection.frame_source import FrameSource
-from human_detection.person_tracker import (
-    PersonTracker,
-    PersonTrackingResult,
-    TrackedPerson,
-)
+from human_detection.person_tracker import TrackedPerson
 from human_detection.target_classifier import TargetClassifier
 from human_detection.target_matching import FeatureMemory, TargetGalleryMatcher
 from human_detection.utils import calculate_iou
 
-from .target_bbox_trajectory import TargetBBoxTrajectory
 from .target_tracking_result import TargetTrackingResult
 
 
@@ -36,22 +29,18 @@ class TargetTrackerConfig:
 class TargetTracker:
     def __init__(
         self,
-        person_tracker: PersonTracker,
         feature_extractor: FeatureExtractor,
         positive_feature_memory: FeatureMemory,
         negative_feature_memory: FeatureMemory,
         target_gallery_matcher: TargetGalleryMatcher,
         target_classifier: TargetClassifier,
-        target_bbox_trajectory: TargetBBoxTrajectory,
         config: TargetTrackerConfig,
     ) -> None:
-        self.person_tracker = person_tracker
         self.feature_extractor = feature_extractor
         self.positive_feature_memory = positive_feature_memory
         self.negative_feature_memory = negative_feature_memory
         self.target_gallery_matcher = target_gallery_matcher
         self.target_classifier = target_classifier
-        self.target_bbox_trajectory = target_bbox_trajectory
 
         # ReID state-machine parameters.
         self.state = "SEARCHING"
@@ -327,32 +316,21 @@ class TargetTracker:
 
         raise RuntimeError(f"Unknown tracking state: {self.state}")
 
-    def process_frame(
+    def track(
         self,
+        frame_bgr: np.ndarray,
+        tracked_persons: list[TrackedPerson],
         frame_index: int,
-        tracking_result: PersonTrackingResult,
     ) -> TargetTrackingResult:
         """Update target state for one person-tracking result."""
-        frame_bgr = tracking_result.frame
         target = self.update_target_state(
             frame=frame_bgr,
-            tracked_persons=tracking_result.tracked_persons,
+            tracked_persons=tracked_persons,
             frame_index=frame_index,
-        )
-
-        frame_height, frame_width = frame_bgr.shape[:2]
-        trajectory_entry = self.target_bbox_trajectory.update(
-            frame_index=frame_index,
-            observed_target=target,
-            frame_width=frame_width,
-            frame_height=frame_height,
         )
 
         return TargetTrackingResult(
-            frame_index=frame_index,
-            person_tracking_result=tracking_result,
             target=target,
-            trajectory_entry=trajectory_entry,
             state=self.state,
         )
 
@@ -361,27 +339,5 @@ class TargetTracker:
         self.state = "SEARCHING"
         self.target_track_id = None
         self.missing_frames = 0
-        self.target_bbox_trajectory.reset()
         self.reid_validation_failures = 0
         self.target_classifier.reset()
-
-    def track(
-        self,
-        source: FrameSource,
-    ) -> Iterator[TargetTrackingResult]:
-        """Yield one target-tracking result for each source frame."""
-        self.reset()
-
-        with source:
-            while True:
-                rgbd_frame = source.read()
-                if rgbd_frame is None:
-                    break
-
-                tracking_result = self.person_tracker.track_frame(rgbd_frame.color_bgr)
-                target_result = self.process_frame(
-                    frame_index=rgbd_frame.frame_index,
-                    tracking_result=tracking_result,
-                )
-
-                yield target_result

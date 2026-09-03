@@ -11,7 +11,9 @@ torch==2.13.0+cu130
 torchreid
 torchvision==0.28.0+cu130
 tqdm
+transformers>=4.47
 ultralytics
 
 # optional
+mediapipe
 primesense==2.2.0.30-5
