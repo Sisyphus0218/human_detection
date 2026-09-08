@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from typing import TYPE_CHECKING
 
 import cv2
@@ -63,17 +64,25 @@ def render_tracking_frame(result: TrackingFrameResult) -> np.ndarray:
     _draw_target_tracking(frame, result)
     draw_pose(frame, result.pose)
 
-    if result.position_mm is not None:
-        x_mm, y_mm, z_mm = result.position_mm
-        cv2.putText(
-            frame,
-            f"Position: ({x_mm:.0f}, {y_mm:.0f}, {z_mm:.0f}) mm",
-            (20, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (0, 255, 255),
-            2,
-        )
+    if result.position is not None:
+        text_y = 70
+        for field in fields(result.position):
+            position = getattr(result.position, field.name)
+            if position is None:
+                continue
+
+            x_mm, y_mm, z_mm = position
+            cv2.putText(
+                frame,
+                f"{field.name.capitalize()}: "
+                f"({x_mm:.0f}, {y_mm:.0f}, {z_mm:.0f}) mm",
+                (20, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (0, 255, 255),
+                2,
+            )
+            text_y += 30
 
     return frame
 

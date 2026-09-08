@@ -1,12 +1,37 @@
 import numpy as np
 
+from human_detection.pose_estimator.pose_estimator import PoseEstimationResult
+from .position_estimation_result import PositionEstimationResult
+
 
 class PositionEstimator:
     def __init__(self, intrinsics):
         # intrinsics = [[fx, 0, cx],
         #               [0, fy, cy],
         #               [0, 0, 1]]
-        self.intrinsics = np.asarray(intrinsics, dtype=np.float32)
+        if intrinsics is None:
+            self.intrinsics = None
+        else:
+            self.intrinsics = np.asarray(intrinsics, dtype=np.float32)
+
+    @staticmethod
+    def estimate_intrinsics(frame: np.ndarray) -> np.ndarray:
+        if not isinstance(frame, np.ndarray) or frame.ndim < 2:
+            raise ValueError("frame must be a NumPy array with at least 2 dimensions")
+
+        height, width = frame.shape[:2]
+        if width <= 0 or height <= 0:
+            raise ValueError("frame width and height must be positive")
+
+        focal_length = float(np.hypot(width, height))
+        return np.asarray(
+            [
+                [focal_length, 0.0, width / 2.0],
+                [0.0, focal_length, height / 2.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
 
     def deproject(
         self,
@@ -38,55 +63,95 @@ class PositionEstimator:
 
         return X, Y, Z
 
-    def estimate_depth(
+    def estimate_keypoint_depth(
         self,
         depth_mm: np.ndarray,
-        bbox: tuple[float, float, float, float],
+        pixel: tuple[float, float],
+        radius: int = 5,
     ) -> float | None:
-        """
-        Estimate the depth value (Z) from a bounding box in the depth image.
+        u, v = pixel
+        height, width = depth_mm.shape[:2]
 
-
-        """
-        # TODO: how to define depth value from bbox?
-        x1, y1, x2, y2 = bbox
-
-        width = x2 - x1
-        height = y2 - y1
-
-        # region of interest (ROI) for depth estimation
-        roi_x1 = int(x1 + width * 0.25)
-        roi_x2 = int(x2 - width * 0.25)
-        roi_y1 = int(y1 + height * 0.25)
-        roi_y2 = int(y2 - height * 0.25)
-
-        roi = depth_mm[roi_y1:roi_y2, roi_x1:roi_x2]
-
-        valid = roi[(roi > 10) & (roi < 10000)]  # 1cm-10m
-
-        if valid.size == 0:
+        u = int(round(u))
+        v = int(round(v))
+        if not (0 <= u < width and 0 <= v < height):
             return None
 
-        depth = float(np.median(valid))
+        x1 = max(0, u - radius)
+        x2 = min(width, u + radius + 1)
+        y1 = max(0, v - radius)
+        y2 = min(height, v + radius + 1)
+
+        roi_depth = depth_mm[y1:y2, x1:x2]
+        valid_depth = roi_depth[
+            np.isfinite(roi_depth) & (roi_depth > 10) & (roi_depth < 10_000)
+        ]  # 1 cm～10 m
+
+        if valid_depth.size == 0:
+            return None
+
+        depth = float(np.median(valid_depth))
 
         return depth
 
     def estimate(
         self,
         depth_mm: np.ndarray | None,
-        bbox: tuple[float, float, float, float] | None,
-    ) -> tuple[float, float, float] | None:
-        if depth_mm is None or bbox is None:
+        pose: PoseEstimationResult | None,
+    ) -> PositionEstimationResult | None:
+        if depth_mm is None or pose is None:
             return None
 
-        Z = self.estimate_depth(depth_mm, bbox)
-        if Z is None:
+        if self.intrinsics is None:
+            self.intrinsics = self.estimate_intrinsics(depth_mm)
+
+        joint_pairs = {
+            "neck": ("left_shoulder", "right_shoulder"),
+            "hip": ("left_hip", "right_hip"),
+            "knee": ("left_knee", "right_knee"),
+            "ankle": ("left_ankle", "right_ankle"),
+        }
+
+        positions_3d = {}
+
+        for center_name, (left_name, right_name) in joint_pairs.items():
+            left_keypoint = pose.get(left_name)
+            right_keypoint = pose.get(right_name)
+
+            if left_keypoint is None or right_keypoint is None:
+                continue
+
+            left_depth = self.estimate_keypoint_depth(
+                depth_mm=depth_mm,
+                pixel=left_keypoint.position_2d,
+            )
+            right_depth = self.estimate_keypoint_depth(
+                depth_mm=depth_mm,
+                pixel=right_keypoint.position_2d,
+            )
+
+            if left_depth is None or right_depth is None:
+                continue
+
+            left_position_3d = self.deproject(
+                depth_mm=left_depth,
+                pixel=left_keypoint.position_2d,
+            )
+            right_position_3d = self.deproject(
+                depth_mm=right_depth,
+                pixel=right_keypoint.position_2d,
+            )
+
+            center_position_3d = tuple(
+                (
+                    (left + right) / 2
+                    for left, right in zip(left_position_3d, right_position_3d)
+                )
+            )
+
+            positions_3d[center_name] = center_position_3d
+
+        if not positions_3d:
             return None
 
-        x1, y1, x2, y2 = bbox
-        center_x = int((x1 + x2) / 2)
-        center_y = int((y1 + y2) / 2)
-
-        X, Y, Z = self.deproject(Z, (center_x, center_y))
-
-        return X, Y, Z
+        return PositionEstimationResult(**positions_3d)

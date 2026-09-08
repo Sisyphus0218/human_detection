@@ -55,20 +55,24 @@ class TrackingPipeline:
         self.position_estimator = position_estimator
         self.config = config
 
-    def run(self, source: FrameSource) -> None:
-        tracking_writer = None
+        self.tracking_writer = None
+        self.debug_writer = None
+
+    def prepare_writer(self, source: FrameSource) -> None:
         if self.config.video_enabled:
-            tracking_writer = VideoWriter(
+            self.tracking_writer = VideoWriter(
                 output_path=self.config.video_path,
                 fps=source.fps,
             )
 
-        debug_writer = None
         if self.config.debug_enabled:
-            debug_writer = VideoWriter(
+            self.debug_writer = VideoWriter(
                 output_path=self.config.debug_path,
                 fps=source.fps,
             )
+
+    def run(self, source: FrameSource) -> None:
+        self.prepare_writer(source)
 
         progress_bar = tqdm(
             total=source.frame_count,
@@ -119,9 +123,9 @@ class TrackingPipeline:
                         bbox=target_bbox,
                     )
 
-                    position_mm = self.position_estimator.estimate(
+                    position_result = self.position_estimator.estimate(
                         depth_mm=rgbd_frame.depth_mm,
-                        bbox=target_bbox,
+                        pose=pose_result,
                     )
 
                     progress_bar.update(1)
@@ -133,24 +137,22 @@ class TrackingPipeline:
                         target_result=target_result,
                         trajectory_entry=trajectory_entry,
                         pose=pose_result,
-                        position_mm=position_mm,
+                        position=position_result,
                     )
 
-                    tracking_frame = None
-                    if tracking_writer is not None or self.config.display_enabled:
+                    if self.tracking_writer is not None:
                         tracking_frame = render_tracking_frame(result)
-
-                    if tracking_writer is not None:
-                        tracking_writer.write(tracking_frame)
+                        self.tracking_writer.write(tracking_frame)
 
                     # save debug video
-                    if debug_writer is not None:
+                    if self.debug_writer is not None:
                         debug_frame = render_debug_frame(result)
-                        debug_writer.write(debug_frame)
+                        self.debug_writer.write(debug_frame)
 
                     # display online
                     if self.config.display_enabled:
-                        cv2.imshow(self.config.display_window_name, tracking_frame)
+                        display_frame = render_tracking_frame(result)
+                        cv2.imshow(self.config.display_window_name, display_frame)
                         display_window_opened = True
 
                         key = cv2.waitKey(1) & 0xFF
@@ -164,10 +166,10 @@ class TrackingPipeline:
         finally:
             progress_bar.close()
 
-            if tracking_writer is not None:
-                tracking_writer.close()
-            if debug_writer is not None:
-                debug_writer.close()
+            if self.tracking_writer is not None:
+                self.tracking_writer.close()
+            if self.debug_writer is not None:
+                self.debug_writer.close()
             if display_window_opened:
                 try:
                     cv2.destroyWindow(self.config.display_window_name)
@@ -179,13 +181,13 @@ class TrackingPipeline:
                 f"No frames received from source: {type(source).__name__}"
             )
 
-        if tracking_writer is not None:
-            tracking_writer.finalize()
-            print(f"Tracking result saved to: {tracking_writer.output_path}")
+        if self.tracking_writer is not None:
+            self.tracking_writer.finalize()
+            print(f"Tracking result saved to: {self.tracking_writer.output_path}")
 
-        if debug_writer is not None:
-            debug_writer.finalize()
-            print(f"All-tracks debug video saved to: {debug_writer.output_path}")
+        if self.debug_writer is not None:
+            self.debug_writer.finalize()
+            print(f"All-tracks debug video saved to: {self.debug_writer.output_path}")
 
         if self.config.bbox_enabled:
             self.target_bbox_trajectory.save(
