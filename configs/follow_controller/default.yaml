@@ -1,0 +1,28 @@
+_target_: human_detection.follow_controller.follow_controller.FollowController
+
+# Example front-facing, level camera: camera right/down/forward -> robot forward/left/up.
+# Replace with calibrated camera-to-robot extrinsics for the actual installation.
+camera_to_robot_rotation:
+  - [0.0, 0.0, 1.0]
+  - [-1.0, 0.0, 0.0]
+  - [0.0, -1.0, 0.0]
+camera_to_robot_translation_mm: [0.0, 0.0, 0.0]
+
+desired_distance_m: 1.5
+gain_x: 0.8
+gain_y: 0.8
+gain_yaw: 1.2
+max_positive_x_speed_mps: 1.2
+max_negative_x_speed_mps: 0.5
+max_y_speed_mps: 0.6
+max_yaw_rate_radps: 1.0
+max_x_accel_mps2: 1.0
+max_y_accel_mps2: 1.0
+max_yaw_accel_radps2: 1.5
+x_deadband_m: 0.05
+y_deadband_m: 0.05
+yaw_deadband_rad: 0.03
+position_filter_alpha: 0.7
+velocity_filter_alpha: 0.35
+max_target_speed_mps: 1.5
+timeout_threshold: 1.0

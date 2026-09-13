@@ -35,6 +35,7 @@ def main(cfg: DictConfig):
     target_bbox_trajectory = instantiate(cfg.bbox_trajectory)
     pose_estimator = instantiate(cfg.pose_estimator)
     position_estimator = instantiate(cfg.position_estimator)
+    follow_controller = instantiate(cfg.follow_controller)
 
     tracking = instantiate(
         cfg.tracking_pipeline,
@@ -43,6 +44,7 @@ def main(cfg: DictConfig):
         target_bbox_trajectory=target_bbox_trajectory,
         pose_estimator=pose_estimator,
         position_estimator=position_estimator,
+        follow_controller=follow_controller,
     )
     tracking.run(frame_source)
 

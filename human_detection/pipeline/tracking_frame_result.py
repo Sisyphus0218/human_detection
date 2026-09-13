@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from human_detection.follow_controller.robot_velocity import VelocityCommand
 from human_detection.frame_source import RGBDFrame
 from human_detection.pose_estimator import PoseEstimationResult
 from human_detection.utils import BBox, Point3D
@@ -13,3 +14,4 @@ class TrackingFrameResult:
     target_bbox: BBox | None
     pose: PoseEstimationResult | None
     position: Point3D | None
+    velocity_command: VelocityCommand | None = None

@@ -5,6 +5,7 @@ defaults:
   - person_tracker: accurate
   - pose_estimator: vitpose
   - position_estimator: default
+  - follow_controller: default
   - registration_pipeline: default
   - source: video
   - target_classifier: ridge
