@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 
+from human_detection.utils import Point2D
+
 
 @dataclass(frozen=True)
 class PoseKeypoint:
     """One pose keypoint expressed in full-frame pixel coordinates."""
 
     name: str
-    position_2d: tuple[float, float]
+    position_2d: Point2D
     confidence: float
 
 

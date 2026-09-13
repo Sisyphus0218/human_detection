@@ -8,9 +8,7 @@ from human_detection.feature_extractor import FeatureExtractor
 from human_detection.person_tracker import TrackedPerson
 from human_detection.target_classifier import TargetClassifier
 from human_detection.target_matching import FeatureMemory, TargetGalleryMatcher
-from human_detection.utils import calculate_iou
-
-from .target_tracking_result import TargetTrackingResult
+from human_detection.utils import BBox
 
 
 @dataclass(frozen=True)
@@ -65,8 +63,8 @@ class TargetTracker:
     @staticmethod
     def crop_person(frame: np.ndarray, person: TrackedPerson) -> np.ndarray:
         """Copy one tracked person's BGR crop from the current frame."""
-        x1, y1, x2, y2 = person.bbox
-        return frame[y1:y2, x1:x2].copy()
+        bbox = person.bbox
+        return frame[bbox.y1 : bbox.y2, bbox.x1 : bbox.x2].copy()
 
     def update_feature_memory(
         self,
@@ -79,7 +77,7 @@ class TargetTracker:
         safe_negative_crops = []
 
         for person in other_persons:
-            iou = calculate_iou(target.bbox, person.bbox)
+            iou = target.bbox.calculate_iou(person.bbox)
             if iou <= self.classifier_max_overlap_iou:
                 safe_negative_crops.append(self.crop_person(frame, person))
             else:
@@ -321,18 +319,15 @@ class TargetTracker:
         frame_bgr: np.ndarray,
         tracked_persons: list[TrackedPerson],
         frame_index: int,
-    ) -> TargetTrackingResult:
-        """Update target state for one person-tracking result."""
+    ) -> BBox | None:
+        """Update tracking state and return the target box, or None if absent."""
         target = self.update_target_state(
             frame=frame_bgr,
             tracked_persons=tracked_persons,
             frame_index=frame_index,
         )
 
-        return TargetTrackingResult(
-            target=target,
-            state=self.state,
-        )
+        return target.bbox if target is not None else None
 
     def reset(self) -> None:
         """Reset state for a new tracking source."""

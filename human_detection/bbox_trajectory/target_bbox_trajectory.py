@@ -4,8 +4,7 @@ import numpy as np
 import torch
 
 from human_detection.frame_source import FrameSource
-from human_detection.person_tracker import TrackedPerson
-
+from human_detection.utils import BBox
 from .bbox_trajectory_entry import BBoxSource, BBoxTrajectoryEntry
 
 
@@ -30,7 +29,7 @@ class TargetBBoxTrajectory:
 
         self.entries: list[BBoxTrajectoryEntry] = []
 
-        self.last_observed_bbox: tuple[int, int, int, int] | None = None
+        self.last_observed_bbox: BBox | None = None
         self.last_observed_frame_index: int | None = None
         self.center_velocity = np.zeros(2, dtype=np.float32)
 
@@ -43,17 +42,16 @@ class TargetBBoxTrajectory:
     def update(
         self,
         frame_index: int,
-        target: TrackedPerson | None,
+        bbox: BBox | None,
         frame_width: int,
         frame_height: int,
     ) -> BBoxTrajectoryEntry:
-        if target is not None:
-            self.remember_bbox(target.bbox, frame_index)
+        if bbox is not None:
+            self.remember_bbox(bbox, frame_index)
             entry = BBoxTrajectoryEntry(
                 frame_index=frame_index,
-                bbox=target.bbox,
+                bbox=bbox,
                 source=BBoxSource.OBSERVED,
-                track_id=target.track_id,
             )
         else:
             predicted_bbox = self.predict_bbox(
@@ -69,7 +67,6 @@ class TargetBBoxTrajectory:
                     if predicted_bbox is not None
                     else BBoxSource.MISSING
                 ),
-                track_id=None,
             )
 
         self.entries.append(entry)
@@ -77,29 +74,17 @@ class TargetBBoxTrajectory:
 
     def remember_bbox(
         self,
-        bbox: tuple[int, int, int, int],
+        bbox: BBox,
         frame_index: int,
     ) -> None:
-        current_bbox = np.asarray(bbox, dtype=np.float32)
-
         if (
             self.last_observed_bbox is not None
             and self.last_observed_frame_index is not None
         ):
             elapsed_frames = max(1, frame_index - self.last_observed_frame_index)
-            previous_bbox = np.asarray(self.last_observed_bbox, dtype=np.float32)
-            current_center = np.array(
-                [
-                    (current_bbox[0] + current_bbox[2]) / 2,
-                    (current_bbox[1] + current_bbox[3]) / 2,
-                ],
-                dtype=np.float32,
-            )
-            previous_center = np.array(
-                [
-                    (previous_bbox[0] + previous_bbox[2]) / 2,
-                    (previous_bbox[1] + previous_bbox[3]) / 2,
-                ],
+            current_center = np.asarray(bbox.center, dtype=np.float32)
+            previous_center = np.asarray(
+                self.last_observed_bbox.center,
                 dtype=np.float32,
             )
             measured_velocity = (current_center - previous_center) / elapsed_frames
@@ -116,7 +101,7 @@ class TargetBBoxTrajectory:
         frame_index: int,
         frame_width: int,
         frame_height: int,
-    ) -> tuple[int, int, int, int] | None:
+    ) -> BBox | None:
         if self.last_observed_bbox is None or self.last_observed_frame_index is None:
             return None
 
@@ -124,14 +109,14 @@ class TargetBBoxTrajectory:
         if elapsed_frames <= 0 or elapsed_frames > self.lost_tolerance:
             return None
 
-        x1, y1, x2, y2 = self.last_observed_bbox
-        box_width = x2 - x1
-        box_height = y2 - y1
+        bbox = self.last_observed_bbox
+        box_width = bbox.width
+        box_height = bbox.height
         if box_width <= 0 or box_height <= 0:
             return None
 
-        previous_center = np.array(
-            [(x1 + x2) / 2, (y1 + y2) / 2],
+        previous_center = np.asarray(
+            bbox.center,
             dtype=np.float32,
         )
         if self.velocity_decay == 1:
@@ -154,7 +139,7 @@ class TargetBBoxTrajectory:
         if predicted_x2 <= predicted_x1 or predicted_y2 <= predicted_y1:
             return None
 
-        return predicted_x1, predicted_y1, predicted_x2, predicted_y2
+        return BBox(predicted_x1, predicted_y1, predicted_x2, predicted_y2)
 
     def dense_bboxes(self) -> torch.Tensor:
         frame_count = len(self.entries)
@@ -173,7 +158,11 @@ class TargetBBoxTrajectory:
             return torch.full((frame_count, 4), float("nan"), dtype=torch.float32)
 
         valid_bboxes = np.asarray(
-            [self.entries[index].bbox for index in valid_indices],
+            [
+                (entry.bbox.x1, entry.bbox.y1, entry.bbox.x2, entry.bbox.y2)
+                for entry in self.entries
+                if entry.bbox is not None
+            ],
             dtype=np.float32,
         )
         all_indices = np.arange(frame_count, dtype=np.float32)
@@ -206,13 +195,6 @@ class TargetBBoxTrajectory:
                 },
                 "bbox_observed_mask": bbox_source == 2,
                 "bbox_preinterpolation_mask": bbox_source != 0,
-                "track_id": torch.tensor(
-                    [
-                        entry.track_id if entry.track_id is not None else -1
-                        for entry in self.entries
-                    ],
-                    dtype=torch.int64,
-                ),
                 "bbox_format": "xyxy",
                 "coordinate_space": "source_frame_pixels",
                 "source_type": type(source).__name__,

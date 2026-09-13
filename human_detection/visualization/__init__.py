@@ -1,12 +1,13 @@
-"""Tracking visualization and video output utilities."""
+"""Tracking overlays and video output."""
 
 from .draw_pose import draw_pose
-from .render import render_debug_frame, render_tracking_frame
+from .render import draw_bbox, draw_position, render_tracking_frame
 from .video_writer import VideoWriter
 
 __all__ = [
     "VideoWriter",
+    "draw_bbox",
     "draw_pose",
-    "render_debug_frame",
+    "draw_position",
     "render_tracking_frame",
 ]

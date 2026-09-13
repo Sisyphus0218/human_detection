@@ -2,6 +2,8 @@ from pathlib import Path
 
 import numpy as np
 
+from human_detection.utils import BBox, Point2D
+
 from .pose_estimation_result import PoseEstimationResult, PoseKeypoint
 from .pose_estimator import PoseEstimator
 
@@ -72,7 +74,7 @@ class ViTPoseEstimator(PoseEstimator):
     def estimate(
         self,
         frame_bgr: np.ndarray,
-        bbox: tuple[int, int, int, int] | None,
+        bbox: BBox | None,
     ) -> PoseEstimationResult | None:
         if bbox is None:
             return None
@@ -81,11 +83,10 @@ class ViTPoseEstimator(PoseEstimator):
             raise ValueError("frame_bgr must have shape (height, width, 3)")
 
         frame_height, frame_width = frame_bgr.shape[:2]
-        x1, y1, x2, y2 = bbox
-        x1 = int(np.clip(x1, 0, frame_width))
-        x2 = int(np.clip(x2, 0, frame_width))
-        y1 = int(np.clip(y1, 0, frame_height))
-        y2 = int(np.clip(y2, 0, frame_height))
+        x1 = int(np.clip(bbox.x1, 0, frame_width))
+        x2 = int(np.clip(bbox.x2, 0, frame_width))
+        y1 = int(np.clip(bbox.y1, 0, frame_height))
+        y2 = int(np.clip(bbox.y2, 0, frame_height))
 
         if x2 <= x1 or y2 <= y1:
             return None
@@ -129,7 +130,7 @@ class ViTPoseEstimator(PoseEstimator):
 
             keypoints[name] = PoseKeypoint(
                 name=name,
-                position_2d=(float(position[0]), float(position[1])),
+                position_2d=Point2D(float(position[0]), float(position[1])),
                 confidence=confidence,
             )
 

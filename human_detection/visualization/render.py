@@ -1,98 +1,62 @@
 from __future__ import annotations
 
-from dataclasses import fields
 from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 
-from human_detection.bbox_trajectory import BBoxSource
+from human_detection.utils import BBox, Point3D
 from .draw_pose import draw_pose
 
 if TYPE_CHECKING:
     from human_detection.pipeline.tracking_frame_result import TrackingFrameResult
 
 
-def _draw_target_tracking(
-    frame: np.ndarray,
-    result: TrackingFrameResult,
-) -> None:
-    """Draw the selected target or its predicted bounding box in place."""
-    target = result.target_result.target
-    if target is not None:
-        x1, y1, x2, y2 = target.bbox
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
-        cv2.putText(
-            frame,
-            f"Target ID: {target.track_id}",
-            (x1, max(y1 - 10, 25)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2,
-        )
-    elif (
-        result.trajectory_entry.source is BBoxSource.PREDICTED
-        and result.trajectory_entry.bbox is not None
-    ):
-        x1, y1, x2, y2 = result.trajectory_entry.bbox
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 165, 255), 3)
-        cv2.putText(
-            frame,
-            "Target predicted",
-            (x1, max(y1 - 10, 25)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 165, 255),
-            2,
-        )
+def draw_bbox(frame: np.ndarray, bbox: BBox | None) -> None:
+    """Draw a current observed box using exclusive right/bottom bounds."""
+    if bbox is None:
+        return
+    height, width = frame.shape[:2]
+    x1, y1 = max(0, bbox.x1), max(0, bbox.y1)
+    x2, y2 = min(width, bbox.x2), min(height, bbox.y2)
+    if x2 <= x1 or y2 <= y1:
+        return
+    cv2.rectangle(frame, (x1, y1), (x2 - 1, y2 - 1), (0, 255, 0), 2)
 
+
+def draw_position(frame: np.ndarray, position: Point3D | None) -> None:
+    """Display the current camera-space position, without reusing old values."""
+    text = "Position (camera, mm): unavailable"
+    if position is not None:
+        text = (
+            f"Position (camera, mm): X={position.x:.0f} "
+            f"Y={position.y:.0f} Z={position.z:.0f}"
+        )
     cv2.putText(
         frame,
-        result.target_result.state,
-        (20, 35),
+        text,
+        (15, 30),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
+        0.6,
         (0, 255, 255),
         2,
+        cv2.LINE_AA,
     )
 
 
-def render_tracking_frame(result: TrackingFrameResult) -> np.ndarray:
-    """Render the target and all enabled algorithm results."""
+def render_tracking_frame(
+    result: TrackingFrameResult,
+    *,
+    render_bbox: bool = True,
+    render_pose: bool = True,
+    render_position: bool = True,
+) -> np.ndarray:
+    """Render enabled overlays on a copy for both display and video output."""
     frame = result.rgbd_frame.color_bgr.copy()
-    _draw_target_tracking(frame, result)
-    draw_pose(frame, result.pose)
-
-    if result.position is not None:
-        text_y = 70
-        for field in fields(result.position):
-            position = getattr(result.position, field.name)
-            if position is None:
-                continue
-
-            x_mm, y_mm, z_mm = position
-            cv2.putText(
-                frame,
-                f"{field.name.capitalize()}: "
-                f"({x_mm:.0f}, {y_mm:.0f}, {z_mm:.0f}) mm",
-                (20, text_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (0, 255, 255),
-                2,
-            )
-            text_y += 30
-
-    return frame
-
-
-def render_debug_frame(result: TrackingFrameResult) -> np.ndarray:
-    """Render only bounding boxes for all tracked people."""
-    frame = result.rgbd_frame.color_bgr.copy()
-
-    for person in result.tracked_persons:
-        x1, y1, x2, y2 = person.bbox
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 0), 2)
-
+    if render_bbox:
+        draw_bbox(frame, result.target_bbox)
+    if render_pose:
+        draw_pose(frame, result.pose)
+    if render_position:
+        draw_position(frame, result.position)
     return frame

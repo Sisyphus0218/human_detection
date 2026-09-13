@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
+from human_detection.utils import BBox
+
 from .pose_estimation_result import PoseEstimationResult
 
 
@@ -12,7 +14,7 @@ class PoseEstimator(ABC):
     def estimate(
         self,
         frame_bgr: np.ndarray,
-        bbox: tuple[int, int, int, int] | None,
+        bbox: BBox | None,
     ) -> PoseEstimationResult | None:
         """
         Estimate pose keypoints inside bbox, or return None when bbox is None.

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from human_detection.utils import BBox
+
 
 class BBoxSource(Enum):
     MISSING = "missing"
@@ -11,6 +13,5 @@ class BBoxSource(Enum):
 @dataclass(frozen=True)
 class BBoxTrajectoryEntry:
     frame_index: int
-    bbox: tuple[int, int, int, int] | None
+    bbox: BBox | None
     source: BBoxSource
-    track_id: int | None

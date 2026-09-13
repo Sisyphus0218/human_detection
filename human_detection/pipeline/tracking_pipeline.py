@@ -5,14 +5,13 @@ import cv2
 from tqdm import tqdm
 
 from human_detection.bbox_trajectory import TargetBBoxTrajectory
-from human_detection.frame_source import FrameSource
+from human_detection.frame_source import FrameSource, RGBDFrame
 from human_detection.person_tracker import PersonTracker
 from human_detection.pose_estimator import PoseEstimator
 from human_detection.position_estimator import PositionEstimator
 from human_detection.target_tracker import TargetTracker
 from human_detection.visualization import (
     VideoWriter,
-    render_debug_frame,
     render_tracking_frame,
 )
 
@@ -23,21 +22,18 @@ from .tracking_frame_result import TrackingFrameResult
 class TrackingPipelineConfig:
     """Output and display settings for the tracking pipeline."""
 
-    bbox_enabled: bool
-    bbox_path: str | Path
-
     video_enabled: bool
     video_path: str | Path
 
-    debug_enabled: bool
-    debug_path: str | Path
-
     display_enabled: bool
     display_window_name: str = "Target Tracking"
+    render_bbox: bool = True
+    render_pose: bool = True
+    render_position: bool = True
 
 
 class TrackingPipeline:
-    """Run target tracking and manage optional outputs and display."""
+    """Run target tracking, trajectory updates, pose and position estimation."""
 
     def __init__(
         self,
@@ -55,109 +51,44 @@ class TrackingPipeline:
         self.position_estimator = position_estimator
         self.config = config
 
-        self.tracking_writer = None
-        self.debug_writer = None
-
-    def prepare_writer(self, source: FrameSource) -> None:
-        if self.config.video_enabled:
-            self.tracking_writer = VideoWriter(
-                output_path=self.config.video_path,
-                fps=source.fps,
-            )
-
-        if self.config.debug_enabled:
-            self.debug_writer = VideoWriter(
-                output_path=self.config.debug_path,
-                fps=source.fps,
-            )
-
     def run(self, source: FrameSource) -> None:
-        self.prepare_writer(source)
-
-        progress_bar = tqdm(
-            total=source.frame_count,
-            desc="Tracking",
-            unit="frame",
-        )
-        display_window_opened = False
-        processed_count = 0
-
         self.target_tracker.reset()
         self.target_bbox_trajectory.reset()
 
+        progress_bar = tqdm(total=source.frame_count, desc="Tracking", unit="frame")
+        processed_count = 0
+        writer = None
+        window_opened = False
+
         try:
             with source:
+                if self.config.video_enabled:
+                    writer = VideoWriter(self.config.video_path, source.fps)
                 while True:
                     rgbd_frame = source.read()
                     if rgbd_frame is None:
                         break
 
-                    frame_height, frame_width = rgbd_frame.color_bgr.shape[:2]
+                    result = self.process_frame(rgbd_frame)
 
-                    # Track all persons in the frame.
-                    tracked_persons = self.person_tracker.track(rgbd_frame.color_bgr)
-
-                    # Find target.
-                    target_result = self.target_tracker.track(
-                        frame_bgr=rgbd_frame.color_bgr,
-                        tracked_persons=tracked_persons,
-                        frame_index=rgbd_frame.frame_index,
-                    )
-
-                    # Update the target bbox trajectory.
-                    trajectory_entry = self.target_bbox_trajectory.update(
-                        frame_index=rgbd_frame.frame_index,
-                        target=target_result.target,
-                        frame_width=frame_width,
-                        frame_height=frame_height,
-                    )
-
-                    target_bbox = (
-                        target_result.target.bbox
-                        if target_result.target is not None
-                        else None
-                    )
-
-                    pose_result = self.pose_estimator.estimate(
-                        frame_bgr=rgbd_frame.color_bgr,
-                        bbox=target_bbox,
-                    )
-
-                    position_result = self.position_estimator.estimate(
-                        depth_mm=rgbd_frame.depth_mm,
-                        pose=pose_result,
-                    )
+                    if self.config.display_enabled or self.config.video_enabled:
+                        rendered = render_tracking_frame(
+                            result,
+                            render_bbox=self.config.render_bbox,
+                            render_pose=self.config.render_pose,
+                            render_position=self.config.render_position,
+                        )
+                        if writer is not None:
+                            writer.write(rendered)
+                        if self.config.display_enabled:
+                            window_opened = True
+                            cv2.imshow(self.config.display_window_name, rendered)
 
                     progress_bar.update(1)
                     processed_count += 1
 
-                    result = TrackingFrameResult(
-                        rgbd_frame=rgbd_frame,
-                        tracked_persons=tracked_persons,
-                        target_result=target_result,
-                        trajectory_entry=trajectory_entry,
-                        pose=pose_result,
-                        position=position_result,
-                    )
-
-                    if self.tracking_writer is not None:
-                        tracking_frame = render_tracking_frame(result)
-                        self.tracking_writer.write(tracking_frame)
-
-                    # save debug video
-                    if self.debug_writer is not None:
-                        debug_frame = render_debug_frame(result)
-                        self.debug_writer.write(debug_frame)
-
-                    # display online
                     if self.config.display_enabled:
-                        display_frame = render_tracking_frame(result)
-                        cv2.imshow(self.config.display_window_name, display_frame)
-                        display_window_opened = True
-
-                        key = cv2.waitKey(1) & 0xFF
-                        if key in (ord("q"), 27):
-                            tqdm.write("Tracking stopped by user")
+                        if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
                             break
 
         except KeyboardInterrupt:
@@ -165,33 +96,61 @@ class TrackingPipeline:
 
         finally:
             progress_bar.close()
-
-            if self.tracking_writer is not None:
-                self.tracking_writer.close()
-            if self.debug_writer is not None:
-                self.debug_writer.close()
-            if display_window_opened:
-                try:
-                    cv2.destroyWindow(self.config.display_window_name)
-                except cv2.error:
-                    pass
+            try:
+                if writer is not None:
+                    writer.close()
+            finally:
+                if window_opened:
+                    try:
+                        cv2.destroyWindow(self.config.display_window_name)
+                    except cv2.error:
+                        pass
 
         if processed_count == 0:
             raise RuntimeError(
                 f"No frames received from source: {type(source).__name__}"
             )
+        if writer is not None:
+            writer.finalize()
+            print(f"Tracking video saved to: {writer.output_path}")
 
-        if self.tracking_writer is not None:
-            self.tracking_writer.finalize()
-            print(f"Tracking result saved to: {self.tracking_writer.output_path}")
+    def process_frame(self, rgbd_frame: RGBDFrame) -> TrackingFrameResult:
+        """Process a single RGB-D frame for tracking."""
+        frame_height, frame_width = rgbd_frame.color_bgr.shape[:2]
 
-        if self.debug_writer is not None:
-            self.debug_writer.finalize()
-            print(f"All-tracks debug video saved to: {self.debug_writer.output_path}")
+        # Track all people in the frame.
+        tracked_persons = self.person_tracker.track(rgbd_frame.color_bgr)
 
-        if self.config.bbox_enabled:
-            self.target_bbox_trajectory.save(
-                self.config.bbox_path,
-                source,
-            )
-            print(f"Bounding boxes saved to: {self.config.bbox_path}")
+        # Find target.
+        target_bbox = self.target_tracker.track(
+            frame_bgr=rgbd_frame.color_bgr,
+            tracked_persons=tracked_persons,
+            frame_index=rgbd_frame.frame_index,
+        )
+
+        # Update the target bbox trajectory.
+        self.target_bbox_trajectory.update(
+            frame_index=rgbd_frame.frame_index,
+            bbox=target_bbox,
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
+
+        # Estimate pose.
+        pose_result = self.pose_estimator.estimate(
+            frame_bgr=rgbd_frame.color_bgr,
+            bbox=target_bbox,
+        )
+
+        # Estimate position.
+        target_position = self.position_estimator.estimate(
+            depth_mm=rgbd_frame.depth_mm,
+            pose=pose_result,
+        )
+
+        return TrackingFrameResult(
+            rgbd_frame=rgbd_frame,
+            target_bbox=target_bbox,
+            pose=pose_result,
+            position=target_position,
+        )

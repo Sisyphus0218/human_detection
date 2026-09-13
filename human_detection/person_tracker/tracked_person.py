@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 
+from human_detection.utils import BBox
+
 
 @dataclass(frozen=True)
 class TrackedPerson:
     track_id: int
-    bbox: tuple[int, int, int, int]
+    bbox: BBox
     confidence: float

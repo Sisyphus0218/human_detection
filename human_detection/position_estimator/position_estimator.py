@@ -1,7 +1,7 @@
 import numpy as np
 
-from human_detection.pose_estimator.pose_estimator import PoseEstimationResult
-from .position_estimation_result import PositionEstimationResult
+from human_detection.pose_estimator import PoseEstimationResult
+from human_detection.utils import Point2D, Point3D
 
 
 class PositionEstimator:
@@ -36,8 +36,8 @@ class PositionEstimator:
     def deproject(
         self,
         depth_mm: float,
-        pixel: tuple[float, float],
-    ) -> tuple[float, float, float]:
+        pixel: Point2D,
+    ) -> Point3D:
         """
         Deproject a pixel coordinate (u, v) with depth value (Z) to 3D coordinates (X, Y, Z).
 
@@ -46,10 +46,10 @@ class PositionEstimator:
             pixel: Pixel coordinates (u, v).
 
         Returns:
-            (X, Y, Z): 3D coordinates in millimeters.
+            Point3D: Camera-space coordinates in millimeters.
         """
 
-        u, v = pixel
+        u, v = pixel.u, pixel.v
 
         fx = float(self.intrinsics[0, 0])
         fy = float(self.intrinsics[1, 1])
@@ -61,15 +61,15 @@ class PositionEstimator:
         X = (u - cx) * Z / fx
         Y = (v - cy) * Z / fy
 
-        return X, Y, Z
+        return Point3D(X, Y, Z)
 
     def estimate_keypoint_depth(
         self,
         depth_mm: np.ndarray,
-        pixel: tuple[float, float],
-        radius: int = 5,
+        pixel: Point2D,
+        radius: int = 3,
     ) -> float | None:
-        u, v = pixel
+        u, v = pixel.u, pixel.v
         height, width = depth_mm.shape[:2]
 
         u = int(round(u))
@@ -98,60 +98,43 @@ class PositionEstimator:
         self,
         depth_mm: np.ndarray | None,
         pose: PoseEstimationResult | None,
-    ) -> PositionEstimationResult | None:
+    ) -> Point3D | None:
+        """Return one camera-space position in millimeters, preferring joint pairs."""
         if depth_mm is None or pose is None:
             return None
 
         if self.intrinsics is None:
             self.intrinsics = self.estimate_intrinsics(depth_mm)
 
-        joint_pairs = {
-            "neck": ("left_shoulder", "right_shoulder"),
-            "hip": ("left_hip", "right_hip"),
-            "knee": ("left_knee", "right_knee"),
-            "ankle": ("left_ankle", "right_ankle"),
-        }
+        joint_pairs = (
+            ("left_hip", "right_hip"),
+            ("left_shoulder", "right_shoulder"),
+            ("left_knee", "right_knee"),
+            ("left_ankle", "right_ankle"),
+        )
 
-        positions_3d = {}
+        positions_3d: dict[str, Point3D] = {}
+        for pair in joint_pairs:
+            for name in pair:
+                keypoint = pose.get(name)
+                if keypoint is None:
+                    continue
+                depth = self.estimate_keypoint_depth(depth_mm, keypoint.position_2d)
+                if depth is None:
+                    continue
+                positions_3d[name] = self.deproject(depth, keypoint.position_2d)
 
-        for center_name, (left_name, right_name) in joint_pairs.items():
-            left_keypoint = pose.get(left_name)
-            right_keypoint = pose.get(right_name)
+        # Prefer any complete pair over a single joint, in body-part order.
+        for left_name, right_name in joint_pairs:
+            left = positions_3d.get(left_name)
+            right = positions_3d.get(right_name)
+            if left is not None and right is not None:
+                return left.midpoint(right)
 
-            if left_keypoint is None or right_keypoint is None:
-                continue
+        # No complete pair: use the first available joint in the same order.
+        for pair in joint_pairs:
+            for name in pair:
+                if name in positions_3d:
+                    return positions_3d[name]
 
-            left_depth = self.estimate_keypoint_depth(
-                depth_mm=depth_mm,
-                pixel=left_keypoint.position_2d,
-            )
-            right_depth = self.estimate_keypoint_depth(
-                depth_mm=depth_mm,
-                pixel=right_keypoint.position_2d,
-            )
-
-            if left_depth is None or right_depth is None:
-                continue
-
-            left_position_3d = self.deproject(
-                depth_mm=left_depth,
-                pixel=left_keypoint.position_2d,
-            )
-            right_position_3d = self.deproject(
-                depth_mm=right_depth,
-                pixel=right_keypoint.position_2d,
-            )
-
-            center_position_3d = tuple(
-                (
-                    (left + right) / 2
-                    for left, right in zip(left_position_3d, right_position_3d)
-                )
-            )
-
-            positions_3d[center_name] = center_position_3d
-
-        if not positions_3d:
-            return None
-
-        return PositionEstimationResult(**positions_3d)
+        return None

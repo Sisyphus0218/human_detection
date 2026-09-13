@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 from ultralytics import YOLO
 
+from human_detection.utils import BBox
 from .person_tracker import PersonTracker
 from .tracked_person import TrackedPerson
 
@@ -62,7 +63,7 @@ class YOLOPersonTracker(PersonTracker):
             tracked_persons.append(
                 TrackedPerson(
                     track_id=int(track_id),
-                    bbox=(x1, y1, x2, y2),
+                    bbox=BBox(x1, y1, x2, y2),
                     confidence=float(confidence),
                 )
             )

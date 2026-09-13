@@ -29,19 +29,3 @@ results:
 
   crops:
     path: ${results.directory}/crops
-
-  bbox:
-    enabled: true
-    path: ${results.directory}/bbox.pt
-
-  video:
-    enabled: true
-    path: ${results.directory}/tracking.mp4
-
-  debug_video:
-    enabled: true
-    path: ${results.directory}/debug.mp4
-
-  display:
-    enabled: true
-    window_name: Target Tracking

@@ -1,10 +1,8 @@
-"""Target tracker components and result types."""
+"""Target tracker components."""
 
 from .target_tracker import TargetTracker, TargetTrackerConfig
-from .target_tracking_result import TargetTrackingResult
 
 __all__ = [
     "TargetTracker",
-    "TargetTrackingResult",
     "TargetTrackerConfig",
 ]

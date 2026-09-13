@@ -3,7 +3,6 @@ import numpy as np
 
 from human_detection.pose_estimator import PoseEstimationResult
 
-
 POSE_CONNECTIONS = (
     ("left_shoulder", "right_shoulder"),
     ("left_shoulder", "left_elbow"),
@@ -20,24 +19,17 @@ POSE_CONNECTIONS = (
 )
 
 
-def draw_pose(
-    frame: np.ndarray,
-    pose_result: PoseEstimationResult | None,
-) -> None:
-    """Draw one pose on frame in place."""
-    if pose_result is None:
+def draw_pose(frame: np.ndarray, pose: PoseEstimationResult | None) -> None:
+    """Draw available current-frame keypoints and their skeleton connections."""
+    if pose is None:
         return
-
-    for first_name, second_name in POSE_CONNECTIONS:
-        first = pose_result.get(first_name)
-        second = pose_result.get(second_name)
-        if first is None or second is None:
-            continue
-
-        first_point = tuple(int(round(value)) for value in first.position_2d)
-        second_point = tuple(int(round(value)) for value in second.position_2d)
-        cv2.line(frame, first_point, second_point, (0, 255, 255), 2)
-
-    for keypoint in pose_result.keypoints.values():
-        point = tuple(int(round(value)) for value in keypoint.position_2d)
+    points = {
+        name: (int(round(keypoint.position_2d.u)), int(round(keypoint.position_2d.v)))
+        for name, keypoint in pose.keypoints.items()
+        if np.isfinite(keypoint.position_2d.as_tuple()).all()
+    }
+    for first, second in POSE_CONNECTIONS:
+        if first in points and second in points:
+            cv2.line(frame, points[first], points[second], (0, 255, 255), 2)
+    for point in points.values():
         cv2.circle(frame, point, 4, (0, 0, 255), -1)
