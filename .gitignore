@@ -1,11 +1,12 @@
 __pycache__/
-.venv/
-.codex/
 .agents/
+.codex/
+.venv/
+.vscode/
 
 data/
-models/
 inputs/
+models/
 outputs/
 results/
 test/
