@@ -3,10 +3,10 @@ _target_: human_detection.pipeline.TrackingPipeline
 config:
   _target_: human_detection.pipeline.TrackingPipelineConfig
 
-  display_enabled: true
+  display_enabled: ${display_enabled}
   display_window_name: Target Tracking
 
-  video_enabled: true
+  video_enabled: ${video_enabled}
   video_path: ${results.directory}/tracking.mp4
 
   render_bbox: true

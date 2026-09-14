@@ -1,7 +1,25 @@
-_target_: human_detection.frame_source.PrimeSenseCameraSource
-
 name: camera
 openni2_redist_path: 'C:\Program Files\OpenNI2\Redist'
 width: 320
 height: 240
 fps: 30
+
+# Calibrated color-camera intrinsics for the configured resolution.
+# null preserves the existing approximation from frame dimensions.
+intrinsics: null
+
+# Example for a front-facing, level camera; replace for your robot installation.
+camera_to_robot_rotation:
+  - [0.0, 0.0, 1.0]
+  - [-1.0, 0.0, 0.0]
+  - [0.0, -1.0, 0.0]
+camera_to_robot_translation_mm: [0.0, 0.0, 0.0]
+
+# Internal constructor wiring; edit the settings above.
+reader:
+  _target_: human_detection.frame_source.PrimeSenseCameraSource
+  name: ${source.name}
+  openni2_redist_path: ${source.openni2_redist_path}
+  width: ${source.width}
+  height: ${source.height}
+  fps: ${source.fps}

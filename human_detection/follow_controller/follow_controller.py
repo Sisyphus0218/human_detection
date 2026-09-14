@@ -11,8 +11,8 @@ class FollowController:
 
     def __init__(
         self,
-        camera_to_robot_rotation: np.ndarray,
-        camera_to_robot_translation_mm: np.ndarray,
+        camera_to_robot_rotation: np.ndarray | None,
+        camera_to_robot_translation_mm: np.ndarray | None,
         desired_distance_m: float,
         gain_x: float,
         gain_y: float,
@@ -33,11 +33,15 @@ class FollowController:
         timeout_threshold: float = 1.0,
     ) -> None:
         # Extrinsics map camera coordinates to robot coordinates, in millimeters.
-        self.camera_to_robot_rotation = np.array(
-            camera_to_robot_rotation, dtype=np.float64, copy=True
+        self.camera_to_robot_rotation = (
+            None
+            if camera_to_robot_rotation is None
+            else np.array(camera_to_robot_rotation, dtype=np.float64, copy=True)
         )
-        self.camera_to_robot_translation_mm = np.array(
-            camera_to_robot_translation_mm, dtype=np.float64, copy=True
+        self.camera_to_robot_translation_mm = (
+            None
+            if camera_to_robot_translation_mm is None
+            else np.array(camera_to_robot_translation_mm, dtype=np.float64, copy=True)
         )
 
         self.desired_distance_m = desired_distance_m
@@ -87,7 +91,11 @@ class FollowController:
         velocity_feedback: VelocityFeedback | None,
         timestamp_ms: float,
     ) -> VelocityCommand:
-        if velocity_feedback is None:
+        if (
+            velocity_feedback is None
+            or self.camera_to_robot_rotation is None
+            or self.camera_to_robot_translation_mm is None
+        ):
             return VelocityCommand(0.0, 0.0, 0.0, valid=False)
 
         if self.last_valid_timestamp_ms is not None:

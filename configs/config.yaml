@@ -14,7 +14,10 @@ defaults:
   - tracking_pipeline: default
   - _self_
 
+# Common runtime settings. Camera calibration lives in configs/source/.
 device: cuda:0
+display_enabled: true
+video_enabled: true
 
 paths:
   root: ${hydra:runtime.cwd}

@@ -1,4 +1,3 @@
 _target_: human_detection.position_estimator.PositionEstimator
 
-# Replace with the calibrated color-camera intrinsic matrix.
-intrinsics: null
+intrinsics: ${source.intrinsics}

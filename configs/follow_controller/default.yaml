@@ -1,12 +1,7 @@
 _target_: human_detection.follow_controller.follow_controller.FollowController
 
-# Example front-facing, level camera: camera right/down/forward -> robot forward/left/up.
-# Replace with calibrated camera-to-robot extrinsics for the actual installation.
-camera_to_robot_rotation:
-  - [0.0, 0.0, 1.0]
-  - [-1.0, 0.0, 0.0]
-  - [0.0, -1.0, 0.0]
-camera_to_robot_translation_mm: [0.0, 0.0, 0.0]
+camera_to_robot_rotation: ${source.camera_to_robot_rotation}
+camera_to_robot_translation_mm: ${source.camera_to_robot_translation_mm}
 
 desired_distance_m: 1.5
 gain_x: 0.8

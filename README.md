@@ -36,6 +36,15 @@ A person-following pipeline for target tracking, pose and 3D position estimation
    uv pip install primesense
    ```
 
+3. Install an FFmpeg build with the `libx264` encoder and add its executable directory to your system `PATH`. Verify that FFmpeg is available from the terminal you use to run tracking:
+
+   ```bash
+   ffmpeg -version
+   ffmpeg -encoders
+   ```
+   
+   Confirm that `libx264` appears in the encoder list. After tracking finishes, the program uses FFmpeg to convert the temporary video to the final `tracking.mp4`. If FFmpeg is unavailable, this final conversion fails. You can skip this dependency when running with `video_enabled=false`.
+
 ### Download Checkpoints
 
 Run the following command from the project root to download the models listed below:
@@ -106,13 +115,15 @@ You can also download the files manually from the source links above and place t
    python -m human_detection.main target.name=person_a source=video source.name=demo
    ```
 
+   Ordinary RGB video supports person tracking and 2D pose estimation, but does not provide the depth required for 3D position estimation or robot following.
+
 3. If you use a PrimeSense camera as input, install the camera dependencies described in [Installation](#installation), then connect the camera. The default OpenNI2 runtime directory is `C:\Program Files\OpenNI2\Redist`; update `openni2_redist_path` in [the camera configuration](configs/source/primesense_camera.yaml) if your installation uses another location.
 
    ```bash
    python -m human_detection.main target.name=person_a source=primesense_camera
    ```
 
-   The camera preset uses 320 x 240 frames at 30 FPS.
+   Configure the camera intrinsics and camera-to-robot extrinsics in [configs/source/primesense_camera.yaml](configs/source/primesense_camera.yaml). The camera preset uses 320 x 240 frames at 30 FPS. For robot following, provide velocity feedback through the `velocity_feedback_provider` argument to `TrackingPipeline.run()`.
 
 4. The program first registers the target from the reference images, then tracks them in the selected video or camera stream. It displays annotated frames and saves the output video. Press **Q** or **Esc** while the display window is focused to stop.
 
@@ -128,29 +139,58 @@ You can also download the files manually from the source links above and place t
 
 ## Configuration
 
-Configuration is managed with Hydra. Defaults are defined in [configs/config.yaml](configs/config.yaml); configuration groups can be selected or individual values overridden from the command line.
+### Common Settings
 
-Append the example arguments below to a tracking command to override the defaults.
+Edit common settings in [configs/config.yaml](configs/config.yaml), or specify them in the command line using the examples below. Command-line arguments take precedence over YAML settings.
 
 | Override | Description | Default | Example |
 | --- | --- | --- | --- |
-| `device` | Device for YOLO, OSNet, and ViTPose; use `cpu` for CPU inference. | `cuda:0` | `device=cpu` |
-| `person_detector` | Registration detector preset: `accurate` or `fast`. | `accurate` | `person_detector=fast` |
-| `person_tracker` | Video tracker preset: `accurate` or `fast`. | `accurate` | `person_tracker=fast` |
-| `pose_estimator` | Pose backend: `vitpose` or `mediapipe`. | `vitpose` | `pose_estimator=mediapipe` |
+| `target.name` | Target reference-image folder name; required for both input types. | Required | `target.name=person_a` |
 | `source` | Input source: `video` or `primesense_camera`. | `video` | `source=primesense_camera` |
+| `source.name` | Video filename without `.mp4`; the camera preset supplies its own name. | Required for video; `camera` for camera input | `source.name=demo` |
+| `device` | Device for inference; use `cpu` if CUDA is unavailable. | `cuda:0` | `device=cpu` |
+| `display_enabled` | Show the tracking window. | `true` | `display_enabled=false` |
+| `video_enabled` | Save the tracking video. | `true` | `video_enabled=false` |
 | `results.directory` | Output directory for registration crops and video. | Timestamped directory under `results/` | `results.directory=results/demo` |
 
-For example, run video tracking on the CPU:
+For example, run video tracking on the CPU without a display window:
 
 ```bash
-python -m human_detection.main target.name=person_a source=video source.name=demo device=cpu
+python -m human_detection.main target.name=person_a source=video source.name=demo device=cpu display_enabled=false
 ```
 
-To inspect the resolved configuration without loading models or running inference:
+### Camera Settings
+
+For PrimeSense input, edit [configs/source/primesense_camera.yaml](configs/source/primesense_camera.yaml). These settings are not needed for ordinary video input.
+
+| Setting | Description |
+| --- | --- |
+| `openni2_redist_path` | Local OpenNI2 runtime directory. |
+| `width`, `height`, `fps` | Supported camera capture resolution and frame rate; defaults are 320 × 240 at 30 FPS. |
+| `intrinsics` | Calibrated 3 × 3 color-camera intrinsic matrix for the capture resolution. With `null`, the estimator approximates it from frame dimensions. |
+| `camera_to_robot_rotation` | 3 × 3 rotation from camera coordinates to robot coordinates; replace the example with your installation calibration for robot following. |
+| `camera_to_robot_translation_mm` | Camera-to-robot translation in millimeters; configure for your installation when using robot following. |
+
+### Model Selection
+
+The default models are YOLO26-L for detection and tracking, OSNet-AIN x1.0 for appearance features, and ViTPose for pose estimation. Change the following presets only when you want a different model configuration:
+
+| Override | Description | Default | Example |
+| --- | --- | --- | --- |
+| `person_detector` | Registration detector: `accurate` uses YOLO26-L; `fast` uses YOLO26-M. | `accurate` | `person_detector=fast` |
+| `person_tracker` | Tracker: `accurate` uses YOLO26-L at input size 1280; `fast` uses YOLO26-M at 320. | `accurate` | `person_tracker=fast` |
+| `pose_estimator` | Pose backend: `vitpose` or `mediapipe`. | `vitpose` | `pose_estimator=mediapipe` |
+
+To use YOLO26-M for both registration and tracking:
 
 ```bash
-python -m human_detection.main target.name=person_a source.name=demo --cfg job --resolve
+python -m human_detection.main target.name=person_a source=video source.name=demo person_detector=fast person_tracker=fast
+```
+
+To use MediaPipe instead of ViTPose:
+
+```bash
+python -m human_detection.main target.name=person_a source=video source.name=demo pose_estimator=mediapipe
 ```
 
 ## Acknowledgements

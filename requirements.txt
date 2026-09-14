@@ -9,5 +9,5 @@ scipy
 tensorboard
 torchreid
 tqdm
-transformers>=4.47
+transformers>=4.48
 ultralytics

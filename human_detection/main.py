@@ -20,7 +20,7 @@ def main(cfg: DictConfig):
     registration.run()
 
     # STAGE 2: Track the registered target.
-    frame_source = instantiate(cfg.source)
+    frame_source = instantiate(cfg.source.reader)
     person_tracker = instantiate(cfg.person_tracker)
     target_gallery_matcher = instantiate(cfg.target_matching.target_gallery_matcher)
     target_classifier = instantiate(cfg.target_classifier)

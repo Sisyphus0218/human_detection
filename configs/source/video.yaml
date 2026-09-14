@@ -1,4 +1,12 @@
-_target_: human_detection.frame_source.VideoFileSource
-
 name: ??? # Video filename without the extension
 video_path: ${paths.inputs_dir}/video/${source.name}.mp4
+
+# RGB video does not provide depth calibration or a robot installation transform.
+intrinsics: null
+camera_to_robot_rotation: null
+camera_to_robot_translation_mm: null
+
+reader:
+  _target_: human_detection.frame_source.VideoFileSource
+  name: ${source.name}
+  video_path: ${source.video_path}
