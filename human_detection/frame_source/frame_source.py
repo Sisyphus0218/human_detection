@@ -2,6 +2,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from types import TracebackType
 
+import numpy as np
+
 from .rgbd_frame import RGBDFrame
 
 
@@ -30,6 +32,11 @@ class FrameSource(ABC):
     @abstractmethod
     def frame_count(self) -> int | None:
         """Return the total frame count, or None for an unbounded source."""
+
+    @property
+    def intrinsics(self) -> np.ndarray | None:
+        """Return the color-camera intrinsic matrix when the source provides it."""
+        return None
 
     @abstractmethod
     def open(self) -> None:

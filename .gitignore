@@ -3,6 +3,7 @@ __pycache__/
 .codex/
 .venv/
 .vscode/
+.pytest_tmp/
 
 data/
 inputs/

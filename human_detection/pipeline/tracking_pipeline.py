@@ -75,6 +75,11 @@ class TrackingPipeline:
 
         try:
             with source:
+                if (
+                    self.position_estimator.intrinsics is None
+                    and source.intrinsics is not None
+                ):
+                    self.position_estimator.intrinsics = source.intrinsics.copy()
                 if self.config.video_enabled:
                     writer = VideoWriter(self.config.video_path, source.fps)
                 while True:

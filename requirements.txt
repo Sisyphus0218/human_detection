@@ -5,6 +5,7 @@ lap>=0.5.12
 mediapipe
 onnx
 onnxruntime-gpu
+pyrealsense2
 scikit-learn
 scipy
 tensorboard

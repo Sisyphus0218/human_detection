@@ -125,9 +125,22 @@ You can also download the files manually from the source links above and place t
 
    Configure the camera intrinsics and camera-to-robot extrinsics in [configs/source/primesense_camera.yaml](configs/source/primesense_camera.yaml). The camera preset uses 320 x 240 frames at 30 FPS. For robot following, provide velocity feedback through the `velocity_feedback_provider` argument to `TrackingPipeline.run()`.
 
-4. The program first registers the target from the reference images, then tracks them in the selected video or camera stream. It displays annotated frames and saves the output video. Press **Q** or **Esc** while the display window is focused to stop.
+4. To replay an Intel RealSense recording, pass its `.bag` or SQLite-backed
+   `.db3` path through the `realsense_bag` source:
 
-5. Results are saved in the following directory, where `<source-name>` is the video name (for example, `demo`) or `camera`:
+   ```bash
+   python -m human_detection.main target.name=person_a source=realsense_bag source.bag_path='C:\path\to\recording.db3'
+   ```
+
+   Playback runs as fast as inference allows by default. Set
+   `source.real_time=true` to preserve the recording pace. Color and depth are
+   aligned by librealsense before each frame enters the tracking pipeline, and
+   the recorded color-camera intrinsics are used automatically for 3D position
+   estimation unless `source.intrinsics` is explicitly overridden.
+
+5. The program first registers the target from the reference images, then tracks them in the selected video or camera stream. It displays annotated frames and saves the output video. Press **Q** or **Esc** while the display window is focused to stop.
+
+6. Results are saved in the following directory, where `<source-name>` is the video name (for example, `demo`) or `camera`:
 
    ```text
    results/
@@ -146,7 +159,7 @@ Edit common settings in [configs/config.yaml](configs/config.yaml), or specify t
 | Override | Description | Default | Example |
 | --- | --- | --- | --- |
 | `target.name` | Target reference-image folder name; required for both input types. | Required | `target.name=person_a` |
-| `source` | Input source: `video` or `primesense_camera`. | `video` | `source=primesense_camera` |
+| `source` | Input source: `video`, `primesense_camera`, or `realsense_bag`. | `video` | `source=realsense_bag` |
 | `source.name` | Video filename without `.mp4`; the camera preset supplies its own name. | Required for video; `camera` for camera input | `source.name=demo` |
 | `device` | Device for inference; use `cpu` if CUDA is unavailable. | `cuda:0` | `device=cpu` |
 | `display_enabled` | Show the tracking window. | `true` | `display_enabled=false` |

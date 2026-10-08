@@ -1,0 +1,17 @@
+name: realsense_bag
+bag_path: ???
+real_time: false
+timeout_ms: 5000
+
+# null automatically uses the color-camera intrinsics stored in the recording.
+# Set a matrix here only to override the recorded calibration.
+intrinsics: null
+camera_to_robot_rotation: null
+camera_to_robot_translation_mm: null
+
+reader:
+  _target_: human_detection.frame_source.RealSenseBagSource
+  name: ${source.name}
+  bag_path: ${source.bag_path}
+  real_time: ${source.real_time}
+  timeout_ms: ${source.timeout_ms}

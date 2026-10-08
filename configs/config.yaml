@@ -1,9 +1,9 @@
 defaults:
   - bbox_trajectory: default
   - feature_extractor: osnet
-  - person_detector: accurate
-  - person_tracker: accurate
-  - pose_estimator: vitpose
+  - person_detector: fast
+  - person_tracker: fast
+  - pose_estimator: mediapipe
   - position_estimator: default
   - follow_controller: default
   - registration_pipeline: default
@@ -15,7 +15,7 @@ defaults:
   - _self_
 
 # Common runtime settings. Camera calibration lives in configs/source/.
-device: cuda:0
+device: cpu
 display_enabled: true
 video_enabled: true
 

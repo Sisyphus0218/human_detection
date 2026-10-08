@@ -2,12 +2,14 @@
 
 from .frame_source import FrameSource
 from .primesense_camera_source import PrimeSenseCameraSource
+from .realsense_bag_source import RealSenseBagSource
 from .rgbd_frame import RGBDFrame
 from .video_file_source import VideoFileSource
 
 __all__ = [
     "FrameSource",
     "PrimeSenseCameraSource",
+    "RealSenseBagSource",
     "RGBDFrame",
     "VideoFileSource",
 ]
